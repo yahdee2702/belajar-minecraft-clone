@@ -1,14 +1,24 @@
-use bevy::{asset::RenderAssetUsages, mesh::Indices, prelude::*};
+use bevy::{asset::RenderAssetUsages, image::ImageSampler, mesh::Indices, prelude::*};
 
-use crate::worldgen::chunks::{Blocks, CHUNK_HEIGHT, CHUNK_SIZE, Chunk, ChunkManager, ChunkPos};
+use crate::{GameState, worldgen::{chunks::{CHUNK_HEIGHT, CHUNK_SIZE, Chunk, ChunkManager, ChunkPos}, models::{BlockModelsManager, CullingMode, Faces}, registry::{AIR_BLOCK, RegistryManager}, textures::BlockAtlas}};
 
 pub fn render_chunks(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    manager: Res<ChunkManager>,
+    mut images: ResMut<Assets<Image>>,
+    block_atlas: Res<BlockAtlas>,
+    chunk_manager: Res<ChunkManager>,
+    registry: Res<RegistryManager>,
+    models_manager: Res<BlockModelsManager>,
+    mut next_state: ResMut<NextState<GameState>>,
 ) {
-    for (chunk_pos, chunk) in manager.iter() {
+    let mut atlas_image = images.get_mut(&block_atlas.handle).unwrap();
+    atlas_image.sampler = ImageSampler::nearest();
+
+    let atlas_size = atlas_image.size();
+
+    for (chunk_pos, chunk) in chunk_manager.iter() {
         let mut positions: Vec<[f32; 3]> = Vec::new();
         let mut normals: Vec<[f32; 3]> = Vec::new();
         let mut uvs: Vec<[f32; 2]> = Vec::new();
@@ -19,15 +29,26 @@ pub fn render_chunks(
                 for x in 0..CHUNK_SIZE {
                     let block = chunk.get(x as usize,y as usize, z as usize).unwrap().clone();
                     
-                    if block == (Blocks::Air as u8) {
-                        continue
+                    if block == AIR_BLOCK {
+                        continue;
                     }
+                    
+                    let Some(registered_block) = registry.get(block) else {
+                        continue
+                    };
 
-                    for face in 0..6 {
-                        let [dx, dy, dz] = FACE_NEIGHBORS[face];
+                    let Some(block_model) = models_manager.get(&registered_block.name) else {
+                        continue
+                    };
+                    
+                    for face in Faces::ALL {
+                        let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];
+                        let face_texture = block_model.get_face_textures(face);
+
+                        let culling_mode = face_texture.culling.mode;
 
                         let neighbor_block = get_neighbor(
-                            &manager, 
+                            &chunk_manager, 
                             chunk_pos, 
                             chunk, 
                             dx + x as i32, 
@@ -35,13 +56,13 @@ pub fn render_chunks(
                             dz + z as i32,
                         );
 
-                        if neighbor_block != Blocks::Air {
+                        if neighbor_block != AIR_BLOCK && culling_mode != CullingMode::None {
                             continue;
                         }
 
                         let vertex_offset = positions.len() as u32;
 
-                        for vertex in FACE_POSITIONS[face] {
+                        for vertex in FACE_POSITIONS[face as usize] {
                             positions.push([
                                 vertex[0] + x as f32,
                                 vertex[1] + y as f32,
@@ -49,16 +70,10 @@ pub fn render_chunks(
                             ]);
                         }
 
-                        normals.extend([FACE_NORMALS[face]; 4]);
+                        normals.extend([FACE_NORMALS[face as usize]; 4]);
+                        uvs.extend(block_model.get_uvs(face, atlas_size));
 
-                        uvs.extend([
-                            [0.0, 1.0],
-                            [1.0, 1.0],
-                            [1.0, 0.0],
-                            [0.0, 0.0]
-                        ]);
-
-                        for index in FACE_INDICES[face] {
+                        for index in FACE_INDICES[face as usize] {
                             indices.push(vertex_offset + index);
                         }
                     }
@@ -74,18 +89,26 @@ pub fn render_chunks(
             .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
             .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
             .with_inserted_indices(Indices::U32(indices));
+        
+        let chunk_material = StandardMaterial {
+            base_color_texture: Some(block_atlas.handle.clone()),
+            ..default()
+        };
 
         commands.spawn((
             Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(Color::WHITE)),
+            MeshMaterial3d(materials.add(chunk_material)),
             Transform::from_xyz((chunk_pos.0.x * CHUNK_SIZE as i32) as f32, 0.0, (chunk_pos.0.y * CHUNK_SIZE as i32) as f32),
         ));
     }
+
+    next_state.set(GameState::Playing);
+    
 }
 
-fn get_neighbor(manager: &ChunkManager, chunk_pos: &ChunkPos, chunk: &Chunk, x: i32, y: i32, z: i32) -> Blocks {
+fn get_neighbor(manager: &ChunkManager, chunk_pos: &ChunkPos, chunk: &Chunk, x: i32, y: i32, z: i32) -> u8 {
     if y < 0 || y >= (CHUNK_HEIGHT as i32) {
-        return Blocks::Air;
+        return AIR_BLOCK;
     }
 
     let size = CHUNK_SIZE as i32;
@@ -103,23 +126,21 @@ fn get_neighbor(manager: &ChunkManager, chunk_pos: &ChunkPos, chunk: &Chunk, x: 
     } else {
         match manager.get_from_xz(chunk_x, chunk_z){
             Some(neighbor_chunk) => neighbor_chunk,
-            None => return Blocks::Air,
+            None => return AIR_BLOCK,
         }
     };
 
-    Blocks::from_u8(
-        target_chunk
-            .get(local_x, y as usize, local_z)
-            .unwrap_or(Blocks::Air as u8)
-    ).unwrap_or(Blocks::Air)
+    target_chunk
+        .get(local_x, y as usize, local_z)
+        .unwrap_or(AIR_BLOCK)
 }
 
 const FACE_POSITIONS: [[[f32; 3]; 4]; 6] = [
     // top (facing towards +y)
     [
-        [-0.5, 0.5, -0.5], // vertex with index 0
-        [0.5, 0.5, -0.5],  // vertex with index 1
-        [0.5, 0.5, 0.5],   // etc. until 23
+        [-0.5, 0.5, -0.5],
+        [0.5, 0.5, -0.5],
+        [0.5, 0.5, 0.5],
         [-0.5, 0.5, 0.5],
     ],
     // bottom   (-y)

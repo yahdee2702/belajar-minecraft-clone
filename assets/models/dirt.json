@@ -1,0 +1,65 @@
+{
+    "name": "dirt",
+    "face": {
+        "top": {
+            "tile": {
+                "x": 8,
+                "y": 4
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "bottom": {
+            "tile": {
+                "x": 8,
+                "y": 4
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "right": {
+            "tile": {
+                "x": 8,
+                "y": 4
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "left": {
+            "tile": {
+                "x": 8,
+                "y": 4
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "front": {
+            "tile": {
+                "x": 8,
+                "y": 4
+            },
+            "rotation": "rotate270",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "back": {
+            "tile": {
+                "x": 8,
+                "y": 4
+            },
+            "rotation": "rotate270",
+            "culling": {
+                "mode": "default"
+            }
+        }
+    }
+}

@@ -1,5 +1,7 @@
 use bevy::{platform::collections::HashMap, prelude::*};
 
+use crate::worldgen::registry::AIR_BLOCK;
+
 pub const CHUNK_SIZE: usize = 16;
 pub const CHUNK_HEIGHT: usize = 64;
 const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE;
@@ -7,7 +9,7 @@ const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct ChunkPos(pub IVec2);
 
-#[derive(Resource, Default)]
+#[derive(Resource, Debug, Default)]
 pub struct ChunkManager {
     chunks: HashMap<ChunkPos, Chunk>
 }
@@ -34,7 +36,7 @@ impl ChunkManager {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Default)]
 pub struct Chunk {
     blocks: Vec<u8>
 }
@@ -42,7 +44,7 @@ pub struct Chunk {
 impl Chunk {
     pub fn new() -> Self {
         Self {
-            blocks: vec![Blocks::Air as u8; CHUNK_VOLUME],
+            blocks: vec![AIR_BLOCK; CHUNK_VOLUME],
         }
     }
 
@@ -50,7 +52,7 @@ impl Chunk {
         x + CHUNK_SIZE * (z + CHUNK_SIZE * y)
     }
 
-    pub fn fill(&mut self, start: UVec3, end: UVec3, block: Blocks) {
+    pub fn fill(&mut self, start: UVec3, end: UVec3, block: u8) {
         for z in start.z..=end.z {
             for y in start.y..=end.y {
                 let start_index = Chunk::index(start.x as usize, y as usize, z as usize);
@@ -61,38 +63,12 @@ impl Chunk {
         }
     }
 
-    pub fn with_fill(mut self, start: UVec3, end: UVec3, block: Blocks) -> Self {
+    pub fn with_fill(mut self, start: UVec3, end: UVec3, block: u8) -> Self {
         self.fill(start, end, block);
         self
     }
 
     pub fn get(&self, x: usize, y: usize, z: usize) -> Option<u8> {
         self.blocks.get(Chunk::index(x,y,z)).cloned()
-    }
-}
-
-#[repr(u8)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// Temporary Block Registry
-pub enum Blocks {
-    Air = 0,
-    Dirt = 1,
-    Grass = 2,
-    Stone = 3,
-}
-
-impl Blocks {
-    pub fn to_u8(self) -> u8 {
-        self as u8
-    }
-
-    pub fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(Self::Air),
-            1 => Some(Self::Dirt),
-            2 => Some(Self::Grass),
-            3 => Some(Self::Stone),
-            _ => None,
-        }
     }
 }

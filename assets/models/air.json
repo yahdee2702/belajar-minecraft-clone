@@ -1,0 +1,65 @@
+{
+    "name": "air",
+    "face": {
+        "top": {
+            "tile": {
+                "x": 0,
+                "y": 0
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "none"
+            }
+        },
+        "bottom": {
+            "tile": {
+                "x": 0,
+                "y": 0
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "none"
+            }
+        },
+        "right": {
+            "tile": {
+                "x": 0,
+                "y": 0
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "none"
+            }
+        },
+        "left": {
+            "tile": {
+                "x": 0,
+                "y": 0
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "none"
+            }
+        },
+        "front": {
+            "tile": {
+                "x": 0,
+                "y": 0
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "none"
+            }
+        },
+        "back": {
+            "tile": {
+                "x": 0,
+                "y": 0
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "none"
+            }
+        }
+    }
+}
