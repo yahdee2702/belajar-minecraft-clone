@@ -44,7 +44,7 @@ fn main() {
         .add_systems(OnEnter(GameState::LoadingChunk), generate_chunks)
         .add_systems(OnEnter(GameState::RenderingChunk), render_chunks)
         .add_systems(OnEnter(GameState::Playing), setup_scene)
-        .add_systems(Update, (grab_mouse, camera_movement_key).run_if(in_state(GameState::Playing)))
+        .add_systems(Update, (grab_mouse, camera_movement_key, raycast_test).run_if(in_state(GameState::Playing)))
         .run();
 }
 
@@ -194,4 +194,21 @@ fn camera_movement_key(
     let delta = mouse_motion.delta;
     transform.rotate_y(-delta.x * sensitivity);
     transform.rotate_local_x(-delta.y * sensitivity);
+}
+
+fn raycast_test(
+    camera: Single<&mut Transform, With<Camera3d>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    chunk_manager: Res<ChunkManager>,
+    registry: Res<RegistryManager>,
+) {
+    if mouse.just_pressed(MouseButton::Left) {
+        let current_pos = camera.translation;
+        let direction = camera.forward().as_vec3();
+
+        let block = chunk_manager.raycast(current_pos, direction, 30);
+        if let Some(registered_block) = registry.get(block) {
+            println!("Block ID: {0} | Block Name: {1}", block, registered_block.name);
+        }
+    }
 }
