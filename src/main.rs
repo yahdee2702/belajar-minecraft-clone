@@ -1,6 +1,6 @@
 use bevy::{input::mouse::AccumulatedMouseMotion, prelude::*, window::{CursorGrabMode, CursorOptions}};
 
-use crate::worldgen::{chunks::ChunkManager, generation::generate_chunks, models::{BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels, collect_loaded_models}, registry::{RegistryManager, register_blocks}, rendering::render_chunks, textures::BlockAtlas};
+use crate::worldgen::{chunks::{ChunkEntities, ChunkManager, PendingChunks}, generation::generate_chunks, models::{BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels, collect_loaded_models}, registry::{AIR_BLOCK, RegistryManager, register_blocks}, rendering::render_pending_chunks, textures::BlockAtlas};
 
 pub mod worldgen;
 
@@ -11,7 +11,6 @@ pub enum GameState {
     LoadingAsset,
     CollectingAsset,
     LoadingChunk,
-    RenderingChunk,
     Playing,
 }
 
@@ -25,6 +24,8 @@ fn main() {
         .add_plugins(DefaultPlugins)
 
         .init_resource::<ChunkManager>()
+        .init_resource::<PendingChunks>()
+        .init_resource::<ChunkEntities>()
         .init_resource::<RegistryManager>()
         .init_resource::<BlockModelsManager>()
 
@@ -42,9 +43,8 @@ fn main() {
         .add_systems(FixedUpdate, check_asset_collected.run_if(in_state(GameState::CollectingAsset)))
 
         .add_systems(OnEnter(GameState::LoadingChunk), generate_chunks)
-        .add_systems(OnEnter(GameState::RenderingChunk), render_chunks)
         .add_systems(OnEnter(GameState::Playing), setup_scene)
-        .add_systems(Update, (grab_mouse, camera_movement_key, raycast_test).run_if(in_state(GameState::Playing)))
+        .add_systems(Update, (grab_mouse, camera_movement_key, raycast_test, render_pending_chunks).run_if(in_state(GameState::Playing)))
         .run();
 }
 
@@ -121,6 +121,11 @@ fn setup_scene(
     // Camera
     commands.spawn((
         Camera3d::default(),
+        Camera {
+            // Atur warna latar belakang khusus untuk kamera ini
+            clear_color: ClearColorConfig::Custom(Color::srgb(0.361, 0.871, 0.89)),
+            ..default()
+        },
         Transform::from_xyz(0.,0.,0.).looking_at(Vec3::ZERO, Vec3::Y)
     ));
 
@@ -199,16 +204,29 @@ fn camera_movement_key(
 fn raycast_test(
     camera: Single<&mut Transform, With<Camera3d>>,
     mouse: Res<ButtonInput<MouseButton>>,
-    chunk_manager: Res<ChunkManager>,
+    mut chunk_manager: ResMut<ChunkManager>,
+    mut pending_chunks: ResMut<PendingChunks>,
     registry: Res<RegistryManager>,
 ) {
     if mouse.just_pressed(MouseButton::Left) {
         let current_pos = camera.translation;
         let direction = camera.forward().as_vec3();
 
-        let block = chunk_manager.raycast(current_pos, direction, 30);
-        if let Some(registered_block) = registry.get(block) {
-            println!("Block ID: {0} | Block Name: {1}", block, registered_block.name);
+        let (block, local_pos, chunk_pos) = chunk_manager.raycast(current_pos, direction, 30);
+        let Some(registered_block) = registry.get(block) else {
+            return;
+        };
+        
+        println!("Block ID: {0} | Block Name: {1}", block, registered_block.name);
+        if block == AIR_BLOCK {
+            return;
         }
+        
+        let Some(chunk) = chunk_manager.get_mut(&chunk_pos) else {
+            return;
+        };
+
+        chunk.set(local_pos, AIR_BLOCK);
+        pending_chunks.enqueue(chunk_pos);
     }
 }

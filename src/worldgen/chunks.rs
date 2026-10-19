@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::{platform::collections::HashMap, prelude::*};
 
 use crate::worldgen::registry::AIR_BLOCK;
@@ -7,7 +9,18 @@ pub const CHUNK_HEIGHT: usize = 64;
 const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct ChunkPos(pub IVec2);
+pub struct ChunkPos {
+    pub x: i32,
+    pub z: i32,
+}
+
+impl ChunkPos {
+    pub fn new(x: i32, z: i32) -> ChunkPos {
+        ChunkPos {
+            x, z,
+        }
+    }
+}
 
 #[derive(Resource, Debug, Default)]
 pub struct ChunkManager {
@@ -23,8 +36,12 @@ impl ChunkManager {
         self.chunks.get(pos)
     }
 
+    pub fn get_mut(&mut self, pos: &ChunkPos) -> Option<&mut Chunk> {
+        self.chunks.get_mut(pos)
+    }
+
     pub fn get_from_vec(&self, pos: IVec2) -> Option<&Chunk> {
-        self.chunks.get(&ChunkPos(pos))
+        self.chunks.get(&ChunkPos::new(pos.x, pos.y))
     }
 
     pub fn get_from_xz(&self, x: i32, z: i32) -> Option<&Chunk> {
@@ -40,7 +57,7 @@ impl ChunkManager {
     }
 
     pub fn get_block_from_vec(&self, chunk_pos: IVec2, local_position: UVec3) -> Option<u8> {
-        self.get_block(ChunkPos(chunk_pos), local_position)
+        self.get_block(ChunkPos::new(chunk_pos.x, chunk_pos.y), local_position)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&ChunkPos, &Chunk)> {
@@ -69,24 +86,46 @@ impl ChunkManager {
         )
     }
     
-    pub fn raycast(&self, current: Vec3, direction: Vec3, distance: i32) -> u8 {
+    pub fn raycast(&self, current: Vec3, direction: Vec3, distance: i32) -> (u8, UVec3, ChunkPos) {
         let mut cur_dist = 0;
         let mut block: u8 = AIR_BLOCK;
+        let mut chunk_pos: IVec2 = IVec2::default();
+        let mut local_pos: UVec3 = UVec3::default();
 
         while block == AIR_BLOCK && cur_dist < distance {
             let pos = (current + direction * cur_dist as f32)
                 .floor()
                 .as_ivec3();
 
-            let chunk_pos = self.get_chunk_pos(pos);
-            let local_pos = self.get_local_pos(pos);
+            chunk_pos = self.get_chunk_pos(pos);
+            local_pos = self.get_local_pos(pos);
             
             block = self.get_block_from_vec(chunk_pos, local_pos).unwrap_or(AIR_BLOCK);
             
             cur_dist += 1;
         }
 
-        block
+        (block, local_pos, ChunkPos::new(chunk_pos.x, chunk_pos.y))
+    }
+}
+
+#[derive(Resource, Debug, Default)]
+pub struct ChunkEntities {
+    pub chunks: HashMap<ChunkPos, Entity>
+}
+
+#[derive(Resource, Debug, Default)]
+pub struct PendingChunks {
+    chunks: VecDeque<ChunkPos>
+}
+
+impl PendingChunks {
+    pub fn enqueue(&mut self, chunk_position: ChunkPos) {
+        self.chunks.push_front(chunk_position);
+    }
+
+    pub fn pop_next(&mut self) -> Option<ChunkPos> {
+        self.chunks.pop_front()
     }
 }
 
@@ -104,6 +143,11 @@ impl Chunk {
 
     fn index(x: usize, y: usize, z: usize) -> usize {
         x + CHUNK_SIZE * (z + CHUNK_SIZE * y)
+    }
+
+    pub fn set(&mut self, position: UVec3, block: u8) {
+        let index = Chunk::index(position.x as usize, position.y as usize, position.z as usize);
+        self.blocks[index] = block;
     }
 
     pub fn fill(&mut self, start: UVec3, end: UVec3, block: u8) {
