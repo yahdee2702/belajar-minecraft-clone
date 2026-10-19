@@ -96,6 +96,9 @@ fn check_asset_collected(
     }
 }
 
+#[derive(Component)]
+struct NormalText;
+
 fn setup_scene(
     mut commands: Commands,
 ) {
@@ -136,7 +139,8 @@ fn setup_scene(
             top: px(12),
             left: px(12),
             ..default()
-        }
+        },
+        NormalText
     ));
 }
 
@@ -158,6 +162,7 @@ fn grab_mouse(
 
 fn camera_movement_key(
     time: Res<Time>,
+    mut normal_text: Query<&mut Text, With<NormalText>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     keyboard: Res<ButtonInput<KeyCode>>,
     camera: Single<&mut Transform, With<Camera3d>>
@@ -199,6 +204,15 @@ fn camera_movement_key(
     let delta = mouse_motion.delta;
     transform.rotate_y(-delta.x * sensitivity);
     transform.rotate_local_x(-delta.y * sensitivity);
+
+    for mut text in normal_text.iter_mut() {
+        text.0 = format!(
+            "X:{0} Y:{1} Z:{2}", 
+            transform.translation.x,
+            transform.translation.y,
+            transform.translation.z,
+        ).to_string();
+    }
 }
 
 fn raycast_test(

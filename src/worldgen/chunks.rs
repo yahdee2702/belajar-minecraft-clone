@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
 use bevy::{platform::collections::HashMap, prelude::*};
+use noise::NoiseFn;
 
 use crate::worldgen::registry::AIR_BLOCK;
 
@@ -168,5 +169,36 @@ impl Chunk {
 
     pub fn get(&self, x: usize, y: usize, z: usize) -> Option<u8> {
         self.blocks.get(Chunk::index(x,y,z)).cloned()
+    }
+
+    pub fn perlin_generation(&mut self, perlin: &noise::Perlin, pos: ChunkPos) {
+        for x in 0..CHUNK_SIZE {
+            for z in 0..CHUNK_SIZE {
+                let world_x = pos.x * CHUNK_SIZE as i32 + x as i32;
+                let world_z = pos.z * CHUNK_SIZE as i32 + z as i32;
+
+                let low = perlin.get([world_x as f64 * 0.01, world_z as f64 * 0.01]);
+                let high = perlin.get([world_x as f64 * 0.04, world_z as f64 * 0.04]);
+
+                let noise = low * 0.8 + high * 0.2;
+                let height = (24.0 + noise * 12.0).floor().clamp(0.0, CHUNK_HEIGHT as f64);
+
+                for y in 0..height as usize {
+                    let percentage = y as f64 / (height - 1.0);
+                    if percentage >= 1.0 {
+                        self.set(UVec3::new(x as u32, y as u32, z as u32), 1);
+                    } else if percentage >= 0.7 {
+                        self.set(UVec3::new(x as u32, y as u32, z as u32), 2);
+                    } else {
+                        self.set(UVec3::new(x as u32, y as u32, z as u32), 3);
+                    }
+                }
+            }
+        }
+    }
+    
+    pub fn with_perlin_generation(mut self, perlin: &noise::Perlin, pos: ChunkPos) -> Self {
+        self.perlin_generation(perlin, pos);
+        self
     }
 }
