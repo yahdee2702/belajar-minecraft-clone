@@ -6,15 +6,10 @@ use bevy::{
 };
 
 use crate::worldgen::{
-    chunks::{ChunkEntities, ChunkManager, PendingChunks},
-    generation::generate_chunks,
-    models::{
+    chunks::{ChunkEntities, ChunkManager, ChunkPos, PendingChunks}, generation::generate_chunks, models::{
         BlockModel, BlockModelsLoader, BlockModelsManager, Faces, PendingBlockModels,
         collect_loaded_models,
-    },
-    registry::{AIR_BLOCK, RegistryManager, register_blocks},
-    rendering::{FACE_NEIGHBORS, render_pending_chunks},
-    textures::BlockAtlas,
+    }, registry::{AIR_BLOCK, RegistryManager, register_blocks}, rendering::{FACE_NEIGHBORS, render_pending_chunks}, textures::BlockAtlas,
 };
 
 pub mod worldgen;
@@ -66,6 +61,7 @@ fn main() {
                 grab_mouse,
                 camera_movement_key,
                 raycast_test,
+                raycast_test2,
                 render_pending_chunks,
             )
                 .run_if(in_state(GameState::Playing)),
@@ -288,9 +284,15 @@ fn raycast_test(
 ) {
     if mouse.just_pressed(MouseButton::Left) {
         let current_pos = camera.translation;
-        let direction = camera.forward().as_vec3();
+        let direction = camera.forward().normalize_or_zero();
 
-        let (block, local_pos, chunk_pos) = chunk_manager.raycast(current_pos, direction, 30.0);
+        let Some((block, position_hit, _face_hit)) = chunk_manager.raycast_3d_dda(current_pos, direction, 30.0) else {
+            return;
+        };
+
+        let chunk_pos = ChunkPos::from_ivec2(chunk_manager.get_chunk_pos(position_hit));
+        let local_pos = chunk_manager.get_local_pos(position_hit);
+
         let Some(registered_block) = registry.get(block) else {
             return;
         };
@@ -308,6 +310,62 @@ fn raycast_test(
         };
 
         chunk.set(local_pos, AIR_BLOCK);
+
+        for face in Faces::ALL {
+            let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];
+            if let (_neighbor_block, Some(neighbor_chunk_pos)) = chunk_manager.get_neighbor(
+                &chunk_pos,
+                IVec3::new(
+                    local_pos.x as i32 + dx,
+                    local_pos.y as i32 + dy,
+                    local_pos.z as i32 + dz,
+                ),
+            ) {
+                if neighbor_chunk_pos != chunk_pos {
+                    pending_chunks.enqueue(neighbor_chunk_pos);
+                }
+            }
+        }
+
+        pending_chunks.enqueue(chunk_pos);
+    }
+}
+
+fn raycast_test2(
+    camera: Single<&mut Transform, With<Camera3d>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    mut chunk_manager: ResMut<ChunkManager>,
+    mut pending_chunks: ResMut<PendingChunks>,
+    registry: Res<RegistryManager>,
+) {
+    if mouse.just_pressed(MouseButton::Right) {
+        let current_pos = camera.translation;
+        let direction = camera.forward().normalize_or_zero();
+
+        let Some((block, position_hit, face_hit)) = chunk_manager.raycast_3d_dda(current_pos, direction, 30.0) else {
+            return;
+        };
+
+        let chunk_pos = ChunkPos::from_ivec2(chunk_manager.get_chunk_pos(position_hit + face_hit));
+        let local_pos = chunk_manager.get_local_pos(position_hit + face_hit);
+
+        let Some(registered_block) = registry.get(block) else {
+            return;
+        };
+
+        println!(
+            "Block ID: {0} | Block Name: {1}",
+            block, registered_block.name
+        );
+        if block == AIR_BLOCK {
+            return;
+        }
+
+        let Some(chunk) = chunk_manager.get_mut(&chunk_pos) else {
+            return;
+        };
+
+        chunk.set(local_pos, 3);
 
         for face in Faces::ALL {
             let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];

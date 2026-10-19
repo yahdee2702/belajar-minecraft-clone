@@ -21,6 +21,10 @@ impl ChunkPos {
             x, z,
         }
     }
+
+    pub fn from_ivec2(vec: IVec2) -> ChunkPos {
+        ChunkPos::new(vec.x, vec.y)
+    }
 }
 
 #[derive(Resource, Debug, Default)]
@@ -120,14 +124,16 @@ impl ChunkManager {
             .unwrap_or(AIR_BLOCK), Some(ChunkPos::new(chunk_x, chunk_z)))
     }
     
+    // Old Raycast (I made it myself)
     pub fn raycast(&self, current: Vec3, direction: Vec3, distance: f32) -> (u8, UVec3, ChunkPos) {
+        let current_offseted = current - Vec3::splat(0.5);
         let mut cur_dist = 0.0;
         let mut block: u8 = AIR_BLOCK;
         let mut chunk_pos: IVec2 = IVec2::default();
         let mut local_pos: UVec3 = UVec3::default();
 
         while block == AIR_BLOCK && cur_dist < distance {
-            let pos = (current + direction * cur_dist as f32)
+            let pos = (current_offseted + direction * cur_dist as f32)
                 .ceil()
                 .as_ivec3();
 
@@ -136,10 +142,143 @@ impl ChunkManager {
             
             block = self.get_block_from_vec(chunk_pos, local_pos).unwrap_or(AIR_BLOCK);
             
-            cur_dist += 0.25;
+            cur_dist += 1.0;
         }
 
         (block, local_pos, ChunkPos::new(chunk_pos.x, chunk_pos.y))
+    }
+
+    // 3D DDA (AI Made - still trying to understand it)
+    pub fn raycast_3d_dda(
+        &self,
+        origin: Vec3,
+        direction: Vec3,
+        max_distance: f32,
+    ) -> Option<(u8, IVec3, IVec3)> {
+        if max_distance < 0.0 || !max_distance.is_finite() {
+            return None;
+        }
+
+        let direction = direction.normalize_or_zero();
+
+        if direction == Vec3::ZERO {
+            return None;
+        }
+
+        // Shift the ray so integer grid cells match blocks centered
+        // on integer world coordinates.
+        let shifted_origin = origin + Vec3::splat(0.5);
+
+        let mut voxel = shifted_origin.floor().as_ivec3();
+
+        let step = IVec3::new(
+            if direction.x > 0.0 {
+                1
+            } else if direction.x < 0.0 {
+                -1
+            } else {
+                0
+            },
+            if direction.y > 0.0 {
+                1
+            } else if direction.y < 0.0 {
+                -1
+            } else {
+                0
+            },
+            if direction.z > 0.0 {
+                1
+            } else if direction.z < 0.0 {
+                -1
+            } else {
+                0
+            },
+        );
+
+        let t_delta = Vec3::new(
+            if direction.x != 0.0 {
+                (1.0 / direction.x).abs()
+            } else {
+                f32::INFINITY
+            },
+            if direction.y != 0.0 {
+                (1.0 / direction.y).abs()
+            } else {
+                f32::INFINITY
+            },
+            if direction.z != 0.0 {
+                (1.0 / direction.z).abs()
+            } else {
+                f32::INFINITY
+            },
+        );
+
+        let mut t_max = Vec3::new(
+            if step.x > 0 {
+                ((voxel.x + 1) as f32 - shifted_origin.x) / direction.x
+            } else if step.x < 0 {
+                (voxel.x as f32 - shifted_origin.x) / direction.x
+            } else {
+                f32::INFINITY
+            },
+            if step.y > 0 {
+                ((voxel.y + 1) as f32 - shifted_origin.y) / direction.y
+            } else if step.y < 0 {
+                (voxel.y as f32 - shifted_origin.y) / direction.y
+            } else {
+                f32::INFINITY
+            },
+            if step.z > 0 {
+                ((voxel.z + 1) as f32 - shifted_origin.z) / direction.z
+            } else if step.z < 0 {
+                (voxel.z as f32 - shifted_origin.z) / direction.z
+            } else {
+                f32::INFINITY
+            },
+        );
+
+        let mut distance = 0.0;
+        let mut face_normal = IVec3::ZERO;
+
+        loop {
+            if distance > max_distance {
+                return None;
+            }
+
+            // Convert world voxel coordinates into chunk and local coordinates.
+
+            // Skip blocks outside the vertical world bounds.
+            if voxel.y >= 0 && voxel.y < CHUNK_HEIGHT as i32 {
+                let chunk_pos = self.get_chunk_pos(voxel);
+                let local_pos = self.get_local_pos(voxel);
+
+                let block = self
+                    .get_block_from_vec(chunk_pos, local_pos)
+                    .unwrap_or(AIR_BLOCK);
+
+                if block != AIR_BLOCK {
+                    return Some((block, voxel, face_normal));
+                }
+            }
+
+            // Advance to the next voxel boundary.
+            if t_max.x <= t_max.y && t_max.x <= t_max.z {
+                distance = t_max.x;
+                voxel.x += step.x;
+                t_max.x += t_delta.x;
+                face_normal = IVec3::new(-step.x, 0, 0);
+            } else if t_max.y <= t_max.z {
+                distance = t_max.y;
+                voxel.y += step.y;
+                t_max.y += t_delta.y;
+                face_normal = IVec3::new(0, -step.y, 0);
+            } else {
+                distance = t_max.z;
+                voxel.z += step.z;
+                t_max.z += t_delta.z;
+                face_normal = IVec3::new(0, 0, -step.z);
+            }
+        }
     }
 }
 
