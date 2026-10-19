@@ -86,16 +86,49 @@ impl ChunkManager {
             local_z as u32,
         )
     }
+
+    pub fn get_neighbor(&self, chunk_pos: &ChunkPos, target_position: IVec3) -> (u8, Option<ChunkPos>) {
+        if target_position.y < 0 || target_position.y >= (CHUNK_HEIGHT as i32) {
+            return (AIR_BLOCK, None);
+        }
+
+        let size = CHUNK_SIZE as i32;
+        let world_x = chunk_pos.x * size + target_position.x;
+        let world_z = chunk_pos.z * size + target_position.z;
+
+        let chunk_x = world_x.div_euclid(size);
+        let chunk_z = world_z.div_euclid(size);
+
+        let local_x = world_x.rem_euclid(size) as usize;
+        let local_z = world_z.rem_euclid(size) as usize;
+
+        let Some(chunk) = self.get(&chunk_pos) else {
+            return (AIR_BLOCK, None);
+        };
+
+        let target_chunk = if chunk_x == chunk_pos.x && chunk_z == chunk_pos.z {
+            chunk
+        } else {
+            match self.get_from_xz(chunk_x, chunk_z){
+                Some(neighbor_chunk) => neighbor_chunk,
+                None => return (AIR_BLOCK, None),
+            }
+        };
+
+        (target_chunk
+            .get(local_x, target_position.y as usize, local_z)
+            .unwrap_or(AIR_BLOCK), Some(ChunkPos::new(chunk_x, chunk_z)))
+    }
     
-    pub fn raycast(&self, current: Vec3, direction: Vec3, distance: i32) -> (u8, UVec3, ChunkPos) {
-        let mut cur_dist = 0;
+    pub fn raycast(&self, current: Vec3, direction: Vec3, distance: f32) -> (u8, UVec3, ChunkPos) {
+        let mut cur_dist = 0.0;
         let mut block: u8 = AIR_BLOCK;
         let mut chunk_pos: IVec2 = IVec2::default();
         let mut local_pos: UVec3 = UVec3::default();
 
         while block == AIR_BLOCK && cur_dist < distance {
             let pos = (current + direction * cur_dist as f32)
-                .floor()
+                .ceil()
                 .as_ivec3();
 
             chunk_pos = self.get_chunk_pos(pos);
@@ -103,7 +136,7 @@ impl ChunkManager {
             
             block = self.get_block_from_vec(chunk_pos, local_pos).unwrap_or(AIR_BLOCK);
             
-            cur_dist += 1;
+            cur_dist += 0.25;
         }
 
         (block, local_pos, ChunkPos::new(chunk_pos.x, chunk_pos.y))

@@ -1,6 +1,6 @@
 use bevy::{asset::RenderAssetUsages, image::ImageSampler, mesh::Indices, prelude::*};
 
-use crate::worldgen::{chunks::{CHUNK_HEIGHT, CHUNK_SIZE, Chunk, ChunkEntities, ChunkManager, ChunkPos, PendingChunks}, models::{BlockModelsManager, CullingMode, Faces}, registry::{AIR_BLOCK, RegistryManager}, textures::BlockAtlas};
+use crate::worldgen::{chunks::{CHUNK_HEIGHT, CHUNK_SIZE, ChunkEntities, ChunkManager, PendingChunks}, models::{BlockModelsManager, CullingMode, Faces}, registry::{AIR_BLOCK, RegistryManager}, textures::BlockAtlas};
 
 pub fn render_pending_chunks(
     mut commands: Commands,
@@ -61,13 +61,13 @@ pub fn render_pending_chunks(
 
                     let culling_mode = face_texture.culling.mode;
 
-                    let neighbor_block = get_neighbor(
-                        &chunk_manager, 
+                    let (neighbor_block, _neighbor_chunk_pos) = chunk_manager.get_neighbor( 
                         &chunk_pos, 
-                        chunk, 
-                        dx + x as i32, 
-                        dy + y as i32, 
-                        dz + z as i32,
+                        IVec3::new(
+                            dx + x as i32, 
+                            dy + y as i32, 
+                            dz + z as i32,
+                        ),
                     );
 
                     if neighbor_block != AIR_BLOCK && culling_mode != CullingMode::None {
@@ -116,35 +116,6 @@ pub fn render_pending_chunks(
     )).id();
 
     chunk_entities.chunks.insert(chunk_pos, chunk_entity);  
-}
-
-fn get_neighbor(manager: &ChunkManager, chunk_pos: &ChunkPos, chunk: &Chunk, x: i32, y: i32, z: i32) -> u8 {
-    if y < 0 || y >= (CHUNK_HEIGHT as i32) {
-        return AIR_BLOCK;
-    }
-
-    let size = CHUNK_SIZE as i32;
-    let world_x = chunk_pos.x * size + x;
-    let world_z = chunk_pos.z * size + z;
-
-    let chunk_x = world_x.div_euclid(size);
-    let chunk_z = world_z.div_euclid(size);
-
-    let local_x = world_x.rem_euclid(size) as usize;
-    let local_z = world_z.rem_euclid(size) as usize;
-
-    let target_chunk = if chunk_x == chunk_pos.x && chunk_z == chunk_pos.z {
-        chunk
-    } else {
-        match manager.get_from_xz(chunk_x, chunk_z){
-            Some(neighbor_chunk) => neighbor_chunk,
-            None => return AIR_BLOCK,
-        }
-    };
-
-    target_chunk
-        .get(local_x, y as usize, local_z)
-        .unwrap_or(AIR_BLOCK)
 }
 
 const FACE_POSITIONS: [[[f32; 3]; 4]; 6] = [
@@ -201,7 +172,7 @@ const FACE_NORMALS: [[f32; 3]; 6] = [
     [0.0, 0.0, -1.0],
 ];
 
-const FACE_NEIGHBORS: [[i32; 3]; 6] = [
+pub const FACE_NEIGHBORS: [[i32; 3]; 6] = [
     [0, 1, 0],
     [0, -1, 0],
     [1, 0, 0],

@@ -1,6 +1,21 @@
-use bevy::{input::mouse::AccumulatedMouseMotion, prelude::*, window::{CursorGrabMode, CursorOptions}};
+use bevy::{
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    input::mouse::AccumulatedMouseMotion,
+    prelude::*,
+    window::{CursorGrabMode, CursorOptions},
+};
 
-use crate::worldgen::{chunks::{ChunkEntities, ChunkManager, PendingChunks}, generation::generate_chunks, models::{BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels, collect_loaded_models}, registry::{AIR_BLOCK, RegistryManager, register_blocks}, rendering::render_pending_chunks, textures::BlockAtlas};
+use crate::worldgen::{
+    chunks::{ChunkEntities, ChunkManager, PendingChunks},
+    generation::generate_chunks,
+    models::{
+        BlockModel, BlockModelsLoader, BlockModelsManager, Faces, PendingBlockModels,
+        collect_loaded_models,
+    },
+    registry::{AIR_BLOCK, RegistryManager, register_blocks},
+    rendering::{FACE_NEIGHBORS, render_pending_chunks},
+    textures::BlockAtlas,
+};
 
 pub mod worldgen;
 
@@ -22,29 +37,39 @@ pub struct CollectingProgress {
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
-
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .init_resource::<ChunkManager>()
         .init_resource::<PendingChunks>()
         .init_resource::<ChunkEntities>()
         .init_resource::<RegistryManager>()
         .init_resource::<BlockModelsManager>()
-
         .init_asset::<BlockModel>()
         .init_asset_loader::<BlockModelsLoader>()
-
         .init_state::<GameState>()
-
         .add_systems(Startup, register_blocks)
-
+        .add_systems(Update, update_fps_counter)
         .add_systems(OnEnter(GameState::LoadingAsset), load_asset)
-        .add_systems(FixedUpdate, check_asset_loaded.run_if(in_state(GameState::LoadingAsset)))
-
+        .add_systems(
+            FixedUpdate,
+            check_asset_loaded.run_if(in_state(GameState::LoadingAsset)),
+        )
         .add_systems(OnEnter(GameState::CollectingAsset), collect_loaded_models)
-        .add_systems(FixedUpdate, check_asset_collected.run_if(in_state(GameState::CollectingAsset)))
-
+        .add_systems(
+            FixedUpdate,
+            check_asset_collected.run_if(in_state(GameState::CollectingAsset)),
+        )
         .add_systems(OnEnter(GameState::LoadingChunk), generate_chunks)
         .add_systems(OnEnter(GameState::Playing), setup_scene)
-        .add_systems(Update, (grab_mouse, camera_movement_key, raycast_test, render_pending_chunks).run_if(in_state(GameState::Playing)))
+        .add_systems(
+            Update,
+            (
+                grab_mouse,
+                camera_movement_key,
+                raycast_test,
+                render_pending_chunks,
+            )
+                .run_if(in_state(GameState::Playing)),
+        )
         .run();
 }
 
@@ -62,11 +87,11 @@ fn load_asset(
     for (_id, registered_block) in registry.iter() {
         let block_handle: Handle<BlockModel> = asset_server.load(registered_block.model.clone());
 
-        pending_models.handles.push(
-            (registered_block.name.clone(), block_handle)
-        );
+        pending_models
+            .handles
+            .push((registered_block.name.clone(), block_handle));
     }
-    
+
     commands.insert_resource(pending_models);
 }
 
@@ -78,10 +103,11 @@ fn check_asset_loaded(
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     if asset_server.is_loaded_with_dependencies(block_atlas.handle.id())
-        && pending_models.handles.iter().all(|handle| {
-            asset_server.is_loaded_with_dependencies(handle.1.id())
-        }) {
-
+        && pending_models
+            .handles
+            .iter()
+            .all(|handle| asset_server.is_loaded_with_dependencies(handle.1.id()))
+    {
         commands.insert_resource(CollectingProgress::default());
         next_state.set(GameState::CollectingAsset);
     }
@@ -99,11 +125,12 @@ fn check_asset_collected(
 #[derive(Component)]
 struct NormalText;
 
-fn setup_scene(
-    mut commands: Commands,
-) {
+#[derive(Component)]
+struct FpsText;
+
+fn setup_scene(mut commands: Commands) {
     // Circle Table Mesh
-    
+
     // Directional Light
     commands.spawn((
         DirectionalLight {
@@ -111,14 +138,12 @@ fn setup_scene(
             shadow_maps_enabled: true,
             ..default()
         },
-        Transform::from_rotation(
-            Quat::from_euler(
-                EulerRot::XYZ, 
-                -45.0_f32.to_radians(), 
-                -30.0_f32.to_radians(), 
-                0.0_f32,
-            )
-        ),
+        Transform::from_rotation(Quat::from_euler(
+            EulerRot::XYZ,
+            -45.0_f32.to_radians(),
+            -30.0_f32.to_radians(),
+            0.0_f32,
+        )),
     ));
 
     // Camera
@@ -129,19 +154,59 @@ fn setup_scene(
             clear_color: ClearColorConfig::Custom(Color::srgb(0.361, 0.871, 0.89)),
             ..default()
         },
-        Transform::from_xyz(0.,0.,0.).looking_at(Vec3::ZERO, Vec3::Y)
+        Transform::from_xyz(0., 0., 0.).looking_at(Vec3::ZERO, Vec3::Y),
     ));
 
     commands.spawn((
-        Text::new("test text"),
+        Text::new("Coord"),
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            top: px(12),
+            left: percent(50),
+            ..default()
+        },
+        NormalText,
+    ));
+
+    commands.spawn((
+        Text::new("FPS: --"),
         Node {
             position_type: PositionType::Absolute,
             top: px(12),
             left: px(12),
             ..default()
         },
-        NormalText
+        FpsText,
     ));
+
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            width: px(10),
+            height: px(10),
+            left: percent(50),
+            top: percent(50),
+            ..default()
+        },
+        BackgroundColor(Color::WHITE),
+    ));
+}
+
+fn update_fps_counter(
+    diagnostics: Res<DiagnosticsStore>,
+    mut query: Query<&mut Text, With<FpsText>>,
+) {
+    let Some(fps) = diagnostics
+        .get(&FrameTimeDiagnosticsPlugin::FPS)
+        .and_then(|diagnostic| diagnostic.smoothed())
+    else {
+        return;
+    };
+
+    for mut text in &mut query {
+        **text = format!("FPS: {:.0}", fps);
+    }
 }
 
 fn grab_mouse(
@@ -165,7 +230,7 @@ fn camera_movement_key(
     mut normal_text: Query<&mut Text, With<NormalText>>,
     mouse_motion: Res<AccumulatedMouseMotion>,
     keyboard: Res<ButtonInput<KeyCode>>,
-    camera: Single<&mut Transform, With<Camera3d>>
+    camera: Single<&mut Transform, With<Camera3d>>,
 ) {
     let mut transform = camera.into_inner();
     let speed = 15.0;
@@ -207,11 +272,10 @@ fn camera_movement_key(
 
     for mut text in normal_text.iter_mut() {
         text.0 = format!(
-            "X:{0} Y:{1} Z:{2}", 
-            transform.translation.x,
-            transform.translation.y,
-            transform.translation.z,
-        ).to_string();
+            "X:{0} Y:{1} Z:{2}",
+            transform.translation.x, transform.translation.y, transform.translation.z,
+        )
+        .to_string();
     }
 }
 
@@ -226,21 +290,41 @@ fn raycast_test(
         let current_pos = camera.translation;
         let direction = camera.forward().as_vec3();
 
-        let (block, local_pos, chunk_pos) = chunk_manager.raycast(current_pos, direction, 30);
+        let (block, local_pos, chunk_pos) = chunk_manager.raycast(current_pos, direction, 30.0);
         let Some(registered_block) = registry.get(block) else {
             return;
         };
-        
-        println!("Block ID: {0} | Block Name: {1}", block, registered_block.name);
+
+        println!(
+            "Block ID: {0} | Block Name: {1}",
+            block, registered_block.name
+        );
         if block == AIR_BLOCK {
             return;
         }
-        
+
         let Some(chunk) = chunk_manager.get_mut(&chunk_pos) else {
             return;
         };
 
         chunk.set(local_pos, AIR_BLOCK);
+
+        for face in Faces::ALL {
+            let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];
+            if let (_neighbor_block, Some(neighbor_chunk_pos)) = chunk_manager.get_neighbor(
+                &chunk_pos,
+                IVec3::new(
+                    local_pos.x as i32 + dx,
+                    local_pos.y as i32 + dy,
+                    local_pos.z as i32 + dz,
+                ),
+            ) {
+                if neighbor_chunk_pos != chunk_pos {
+                    pending_chunks.enqueue(neighbor_chunk_pos);
+                }
+            }
+        }
+
         pending_chunks.enqueue(chunk_pos);
     }
 }

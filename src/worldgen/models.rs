@@ -143,14 +143,16 @@ impl BlockModel {
         let tex_width = 16u32;
         let tex_height = 16u32;
 
+        let uv_offset = 0.0005_f32;
+
         let uv_min = Vec2::new(
-            tex_x as f32 / atlas_size.x as f32,
-            tex_y as f32 / atlas_size.y as f32,
+            tex_x as f32 / atlas_size.x as f32 + uv_offset,
+            tex_y as f32 / atlas_size.y as f32 + uv_offset,
         );
 
         let uv_max = Vec2::new(
-            (tex_x + tex_width) as f32 / atlas_size.x as f32,
-            (tex_y + tex_height) as f32 / atlas_size.y as f32,
+            (tex_x + tex_width) as f32 / atlas_size.x as f32 - uv_offset,
+            (tex_y + tex_height) as f32 / atlas_size.y as f32 - uv_offset,
         );
 
         let base_uvs = [
