@@ -311,7 +311,7 @@ fn raycast_test(
 
         chunk.set(local_pos, AIR_BLOCK);
 
-        for face in Faces::ALL {
+        for face in Faces::SIDES {
             let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];
             if let (_neighbor_block, Some(neighbor_chunk_pos)) = chunk_manager.get_neighbor(
                 &chunk_pos,
@@ -365,9 +365,9 @@ fn raycast_test2(
             return;
         };
 
-        chunk.set(local_pos, 3);
+        chunk.set(local_pos, 4);
 
-        for face in Faces::ALL {
+        for face in Faces::SIDES {
             let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];
             if let (_neighbor_block, Some(neighbor_chunk_pos)) = chunk_manager.get_neighbor(
                 &chunk_pos,

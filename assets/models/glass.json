@@ -1,0 +1,65 @@
+{
+    "name": "stone",
+    "face": {
+        "top": {
+            "tile": {
+                "x": 15,
+                "y": 3
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "same_block"
+            }
+        },
+        "bottom": {
+            "tile": {
+                "x": 15,
+                "y": 3
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "same_block"
+            }
+        },
+        "right": {
+            "tile": {
+                "x": 15,
+                "y": 3
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "same_block"
+            }
+        },
+        "left": {
+            "tile": {
+                "x": 15,
+                "y": 3
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "same_block"
+            }
+        },
+        "front": {
+            "tile": {
+                "x": 15,
+                "y": 3
+            },
+            "rotation": "rotate270",
+            "culling": {
+                "mode": "same_block"
+            }
+        },
+        "back": {
+            "tile": {
+                "x": 15,
+                "y": 3
+            },
+            "rotation": "rotate270",
+            "culling": {
+                "mode": "same_block"
+            }
+        }
+    }
+}

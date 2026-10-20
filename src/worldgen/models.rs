@@ -82,6 +82,12 @@ impl Faces {
         Faces::Back,
         Faces::Front,
     ];
+    pub const SIDES: [Faces; 4] = [
+        Faces::Right,
+        Faces::Left,
+        Faces::Back,
+        Faces::Front,
+    ];
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]

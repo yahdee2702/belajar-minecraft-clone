@@ -57,6 +57,7 @@ pub fn register_blocks(
     registry.register("grass", "models/grass.json");
     registry.register("dirt", "models/dirt.json");
     registry.register("stone", "models/stone.json");
+    registry.register("glass", "models/glass.json");
 
     next_state.set(GameState::LoadingAsset);
 }
