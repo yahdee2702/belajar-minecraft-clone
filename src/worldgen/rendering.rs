@@ -1,4 +1,4 @@
-use bevy::{asset::RenderAssetUsages, image::ImageSampler, mesh::Indices, prelude::*};
+use bevy::{asset::RenderAssetUsages, mesh::Indices, prelude::*};
 
 use crate::worldgen::{
     chunks::{CHUNK_HEIGHT, CHUNK_SIZE, ChunkEntities, ChunkManager, PendingChunks},
@@ -17,10 +17,13 @@ pub fn render_pending_chunks(
 
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut images: ResMut<Assets<Image>>,
     block_atlas: Res<BlockAtlas>,
     models_manager: Res<BlockModelsManager>,
 ) {
+    if pending_chunks.is_empty() {
+        return;
+    }
+
     let Some(chunk_pos) = pending_chunks.pop_next() else {
         return;
     };
@@ -33,10 +36,7 @@ pub fn render_pending_chunks(
         commands.entity(*prev_entity).despawn();
     }
 
-    let mut atlas_image = images.get_mut(&block_atlas.handle).unwrap();
-    atlas_image.sampler = ImageSampler::nearest();
-
-    let atlas_size = atlas_image.size();
+    let atlas_size = block_atlas.size;
 
     let mut positions: Vec<[f32; 3]> = Vec::new();
     let mut normals: Vec<[f32; 3]> = Vec::new();
@@ -146,6 +146,7 @@ pub fn render_pending_chunks(
     .with_inserted_indices(Indices::U32(indices));
 
     let chunk_material = StandardMaterial {
+        // base_color: Color::WHITE,
         base_color_texture: Some(block_atlas.handle.clone()),
         alpha_mode: AlphaMode::Mask(0.5),
         ..default()

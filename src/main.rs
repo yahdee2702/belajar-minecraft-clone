@@ -9,7 +9,7 @@ use crate::worldgen::{
     chunks::{ChunkEntities, ChunkManager, ChunkPos, PendingChunks}, generation::generate_chunks, models::{
         BlockModel, BlockModelsLoader, BlockModelsManager, Faces, PendingBlockModels,
         collect_loaded_models,
-    }, registry::{AIR_BLOCK, RegistryManager, register_blocks}, rendering::{FACE_NEIGHBORS, render_pending_chunks}, textures::BlockAtlas,
+    }, registry::{AIR_BLOCK, RegistryManager, register_blocks}, rendering::{FACE_NEIGHBORS, render_pending_chunks}, textures::{BlockAtlas, prepare_block_atlas},
 };
 
 pub mod worldgen;
@@ -48,7 +48,7 @@ fn main() {
             FixedUpdate,
             check_asset_loaded.run_if(in_state(GameState::LoadingAsset)),
         )
-        .add_systems(OnEnter(GameState::CollectingAsset), collect_loaded_models)
+        .add_systems(OnEnter(GameState::CollectingAsset), (collect_loaded_models, prepare_block_atlas))
         .add_systems(
             FixedUpdate,
             check_asset_collected.run_if(in_state(GameState::CollectingAsset)),
@@ -76,6 +76,7 @@ fn load_asset(
 ) {
     commands.insert_resource(BlockAtlas {
         handle: asset_server.load("textures/block_atlas.png"),
+        ..default()
     });
 
     let mut pending_models = PendingBlockModels::default();
@@ -365,7 +366,7 @@ fn raycast_test2(
             return;
         };
 
-        chunk.set(local_pos, 4);
+        chunk.set(local_pos, 5);
 
         for face in Faces::SIDES {
             let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];

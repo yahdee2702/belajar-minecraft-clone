@@ -300,6 +300,10 @@ impl PendingChunks {
     pub fn pop_next(&mut self) -> Option<ChunkPos> {
         self.chunks.pop_front()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.chunks.is_empty()
+    }
 }
 
 #[derive(Clone, Debug, Default)]
