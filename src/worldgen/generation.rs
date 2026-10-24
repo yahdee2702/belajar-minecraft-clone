@@ -49,7 +49,7 @@ pub fn begin_rendering_chunks(
                 continue;
             }
 
-            pending_chunks.enqueue(pos);
+            pending_chunks.back_enqueue(pos);
         }
     }
 }

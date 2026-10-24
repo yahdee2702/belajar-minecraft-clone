@@ -400,12 +400,16 @@ impl PendingChunks {
         self.chunks.push_front(chunk_position);
     }
 
+    pub fn back_enqueue(&mut self, chunk_position: ChunkPos) {
+        self.chunks.push_back(chunk_position);
+    }
+
     pub fn in_queue(&self, chunk_position: ChunkPos) -> bool {
         self.chunks.contains(&chunk_position)
     }
 
     pub fn pop_next(&mut self) -> Option<ChunkPos> {
-        self.chunks.pop_back()
+        self.chunks.pop_front()
     }
 
     pub fn is_empty(&self) -> bool {
