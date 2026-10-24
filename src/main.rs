@@ -6,7 +6,7 @@ use crate::worldgen::{
     chunks::{ChunkEntities, ChunkManager, PendingChunks}, generation::generate_chunks, models::{
         BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels,
         collect_loaded_models,
-    }, registry::{AIR_BLOCK, RegistryManager, register_blocks}, rendering::render_pending_chunks, textures::{BlockAtlas, prepare_block_atlas},
+    }, registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks}, rendering::{PendingChunksMesh, render_pending_chunks, render_pending_chunks_mesh}, textures::{BlockAtlas, prepare_block_atlas},
 };
 
 pub mod worldgen;
@@ -33,6 +33,7 @@ fn main() {
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .init_resource::<ChunkManager>()
         .init_resource::<PendingChunks>()
+        .init_resource::<PendingChunksMesh>()
         .init_resource::<ChunkEntities>()
         .init_resource::<RegistryManager>()
         .init_resource::<BlockModelsManager>()
@@ -62,6 +63,7 @@ fn main() {
                 block_breaking,
                 block_placing,
                 render_pending_chunks,
+                render_pending_chunks_mesh,
                 block_switch,
             )
                 .run_if(in_state(GameState::Playing)),
@@ -72,7 +74,7 @@ fn main() {
 fn load_asset(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    registry: Res<RegistryManager>,
+    registry: Res<SharedRegistryManager>,
 ) {
     commands.insert_resource(BlockAtlas {
         handle: asset_server.load("textures/block_atlas.png"),

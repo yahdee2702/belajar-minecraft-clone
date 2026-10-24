@@ -1,16 +1,18 @@
+use std::sync::Arc;
+
 use bevy::{platform::collections::HashMap, prelude::*};
 
 use crate::GameState;
 
 pub const AIR_BLOCK: u8 = 0;
 
-#[derive(Resource, Debug, Default)]
+#[derive(Resource, Clone, Debug, Default)]
 pub struct RegistryManager {
     registered_blocks: HashMap<u8, RegisteredBlock>,
     next_id: u8,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct RegisteredBlock {
     pub name: String,
     pub model: String,
@@ -42,7 +44,23 @@ impl RegistryManager {
     }
 }
 
+#[derive(Resource, Debug, Default)]
+pub struct SharedRegistryManager {
+    pub registry_manager: Arc<RegistryManager>
+}
+
+impl SharedRegistryManager {
+    pub fn get(&self, id: u8) -> Option<&RegisteredBlock> {
+        self.registry_manager.get(id)
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&u8, &RegisteredBlock)> {
+        self.registry_manager.iter()
+    }
+}
+
 pub fn register_blocks(
+    mut commands: Commands,
     mut registry: ResMut<RegistryManager>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
@@ -54,6 +72,12 @@ pub fn register_blocks(
     registry.register("plank", "models/plank.json");
     registry.register("log", "models/log.json");
     registry.register("leave", "models/leave.json");
+
+
+    commands.insert_resource(SharedRegistryManager {
+        registry_manager: Arc::new(registry.clone()),
+    });
+    commands.remove_resource::<RegistryManager>();
 
     next_state.set(GameState::LoadingAsset);
 }

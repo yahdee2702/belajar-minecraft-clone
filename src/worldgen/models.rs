@@ -1,4 +1,10 @@
-use bevy::{asset::{AssetLoader, LoadContext, io::Reader}, platform::collections::HashMap, prelude::*};
+use std::sync::Arc;
+
+use bevy::{
+    asset::{AssetLoader, LoadContext, io::Reader},
+    platform::collections::HashMap,
+    prelude::*,
+};
 use serde::Deserialize;
 use thiserror::Error;
 
@@ -37,13 +43,13 @@ impl AssetLoader for BlockModelsLoader {
 
         Ok(models)
     }
-    
+
     fn extensions(&self) -> &[&str] {
         &["json"]
     }
 }
 
-#[derive(Resource, Debug, Default)]
+#[derive(Resource, Clone, Debug, Default)]
 pub struct BlockModelsManager {
     models: HashMap<String, BlockModel>,
 }
@@ -54,9 +60,20 @@ impl BlockModelsManager {
     }
 }
 
+#[derive(Resource, Clone, Debug, Default)]
+pub struct SharedBlockModelsManager {
+    pub models_manager: Arc<BlockModelsManager>,
+}
+
+impl SharedBlockModelsManager {
+    pub fn get(&self, name: impl Into<String>) -> Option<&BlockModel> {
+        self.models_manager.get(name)
+    }
+}
+
 #[derive(Resource, Default)]
 pub struct PendingBlockModels {
-    pub handles: Vec<(String, Handle<BlockModel>)>
+    pub handles: Vec<(String, Handle<BlockModel>)>,
 }
 
 impl BlockModelsManager {}
@@ -82,12 +99,7 @@ impl Faces {
         Faces::Back,
         Faces::Front,
     ];
-    pub const SIDES: [Faces; 4] = [
-        Faces::Right,
-        Faces::Left,
-        Faces::Back,
-        Faces::Front,
-    ];
+    pub const SIDES: [Faces; 4] = [Faces::Right, Faces::Left, Faces::Back, Faces::Front];
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -111,7 +123,7 @@ pub enum CullingMode {
 pub struct FaceTexture {
     pub tile: Tile,
     pub rotation: UvRotation,
-    pub culling: CullingOptions
+    pub culling: CullingOptions,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -122,7 +134,7 @@ pub struct Tile {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct CullingOptions {
-    pub mode: CullingMode
+    pub mode: CullingMode,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -165,7 +177,7 @@ impl BlockModel {
             [uv_min.x, uv_max.y],
             [uv_max.x, uv_max.y],
             [uv_max.x, uv_min.y],
-            [uv_min.x, uv_min.y]
+            [uv_min.x, uv_min.y],
         ];
 
         return rotate_uvs(base_uvs, face_texture.rotation);
@@ -194,10 +206,7 @@ impl BlockModel {
     }
 }
 
-fn rotate_uvs(
-    uvs: [[f32; 2]; 4],
-    rotation: UvRotation,
-) -> [[f32; 2]; 4] {
+fn rotate_uvs(uvs: [[f32; 2]; 4], rotation: UvRotation) -> [[f32; 2]; 4] {
     match rotation {
         UvRotation::None => uvs,
         UvRotation::Rotate90 => [uvs[3], uvs[0], uvs[1], uvs[2]],
@@ -207,6 +216,7 @@ fn rotate_uvs(
 }
 
 pub fn collect_loaded_models(
+    mut commands: Commands,
     mut pending: ResMut<PendingBlockModels>,
     mut models_manager: ResMut<BlockModelsManager>,
     mut collecting_progress: ResMut<CollectingProgress>,
@@ -222,4 +232,9 @@ pub fn collect_loaded_models(
     });
 
     collecting_progress.block_models_loaded = true;
+
+    commands.insert_resource(SharedBlockModelsManager {
+        models_manager: Arc::new(models_manager.clone()),
+    });
+    commands.remove_resource::<BlockModelsManager>();
 }

@@ -27,7 +27,7 @@ impl ChunkPos {
     }
 }
 
-#[derive(Resource, Debug, Default)]
+#[derive(Resource, Clone, Debug, Default)]
 pub struct ChunkManager {
     chunks: HashMap<ChunkPos, Chunk>
 }
@@ -164,6 +164,10 @@ impl ChunkManager {
     pub fn update_neighbor_chunks_by_world_pos(&self, world_pos: IVec3, pending_chunks: &mut PendingChunks) {
         let chunk_pos = self.get_chunk_pos(world_pos);
         let local_pos = self.get_local_pos(world_pos);
+
+        if local_pos.x != 0 && local_pos.x != 15 && local_pos.z != 0 && local_pos.z != 15 {
+            return;
+        }
 
         for face in Faces::SIDES {
             let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];

@@ -1,26 +1,54 @@
-use std::time::Instant;
+use std::sync::Arc;
 
-use bevy::{asset::RenderAssetUsages, mesh::Indices, prelude::*};
-
-use crate::worldgen::{
-    chunks::{CHUNK_HEIGHT, CHUNK_SIZE, ChunkEntities, ChunkManager, PendingChunks},
-    models::{BlockModelsManager, CullingMode, Faces},
-    registry::{AIR_BLOCK, RegistryManager},
-    textures::BlockAtlas,
+use bevy::{
+    asset::RenderAssetUsages,
+    mesh::Indices,
+    platform::collections::HashMap,
+    prelude::*,
+    tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future},
 };
 
-pub fn render_pending_chunks(
-    mut commands: Commands,
+use crate::worldgen::{
+    chunks::{CHUNK_HEIGHT, CHUNK_SIZE, Chunk, ChunkEntities, ChunkManager, ChunkPos, PendingChunks}, models::{BlockModelsManager, CullingMode, Faces, SharedBlockModelsManager}, registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager}, textures::BlockAtlas,
+};
+pub struct ChunkMeshAttributes {
+    pub positions: Vec<[f32; 3]>,
+    pub normals: Vec<[f32; 3]>,
+    pub uvs: Vec<[f32; 2]>,
+    pub indices: Vec<u32>,
+    pub colors: Vec<[f32; 4]>,
+}
 
+#[derive(Resource, Default)]
+pub struct PendingChunksMesh {
+    chunks: HashMap<ChunkPos, Task<ChunkMeshAttributes>>,
+}
+
+impl PendingChunksMesh {
+    pub fn insert(&mut self, chunk_pos: ChunkPos, task: Task<ChunkMeshAttributes>) {
+        self.chunks.insert(chunk_pos, task);
+    }
+
+    pub fn retain<F>(&mut self, f: F)
+    where
+        F: FnMut(&ChunkPos, &mut Task<ChunkMeshAttributes>) -> bool,
+    {
+        self.chunks.retain(f);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.chunks.is_empty()
+    }
+}
+
+pub fn render_pending_chunks(
     chunk_manager: Res<ChunkManager>,
     mut pending_chunks: ResMut<PendingChunks>,
-    mut chunk_entities: ResMut<ChunkEntities>,
-    registry: Res<RegistryManager>,
+    mut pending_chunk_mesh: ResMut<PendingChunksMesh>,
+    registry: Res<SharedRegistryManager>,
 
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
     block_atlas: Res<BlockAtlas>,
-    models_manager: Res<BlockModelsManager>,
+    models_manager: Res<SharedBlockModelsManager>,
 ) {
     if pending_chunks.is_empty() {
         return;
@@ -30,24 +58,51 @@ pub fn render_pending_chunks(
         return;
     };
 
-    let Some(chunk) = chunk_manager.get(&chunk_pos) else {
+    if chunk_manager.get(&chunk_pos).is_none() {
         return;
     };
 
-    if let Some(prev_entity) = chunk_entities.chunks.get(&chunk_pos) {
-        commands.entity(*prev_entity).despawn();
-    }
+    let task_pool = AsyncComputeTaskPool::get();
 
     let atlas_size = block_atlas.size;
+    
+    let registry     = Arc::clone(&registry.registry_manager);
+    let models_manager = Arc::clone(&models_manager.models_manager);
+    let cloned_models_manager = (*models_manager).clone();
 
+    // TODO: NEED to find a better way for this
+    let cloned_chunk_manager = (*chunk_manager).clone();
+
+    let task: Task<ChunkMeshAttributes> = task_pool.spawn(async move {        
+        let chunk = cloned_chunk_manager.get(&chunk_pos).unwrap();
+
+        render_chunk(
+            chunk,
+            chunk_pos,
+            atlas_size,
+            &registry,
+            &cloned_models_manager,
+            &cloned_chunk_manager,
+        )
+    });
+
+    pending_chunk_mesh.insert(chunk_pos, task);
+}
+
+pub fn render_chunk(
+    chunk: &Chunk,
+    chunk_pos: ChunkPos,
+    atlas_size: UVec2,
+    registry: &RegistryManager,
+    models_manager: &BlockModelsManager,
+    chunk_manager: &ChunkManager,
+) -> ChunkMeshAttributes {
     let mut positions: Vec<[f32; 3]> = Vec::new();
     let mut normals: Vec<[f32; 3]> = Vec::new();
     let mut uvs: Vec<[f32; 2]> = Vec::new();
     let mut indices: Vec<u32> = Vec::new();
-
     let mut colors: Vec<[f32; 4]> = Vec::new();
 
-    let start = Instant::now();
     for y in 0..CHUNK_HEIGHT {
         for z in 0..CHUNK_SIZE {
             for x in 0..CHUNK_SIZE {
@@ -137,42 +192,70 @@ pub fn render_pending_chunks(
         }
     }
 
-    let elapsed = start.elapsed();
-    println!("Chunk mesh generation (attribute generation): {elapsed:?}");
+    ChunkMeshAttributes { positions, normals, uvs, indices, colors }
+}
 
-    let mesh = Mesh::new(
-        bevy::mesh::PrimitiveTopology::TriangleList,
-        RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, uvs)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colors)
-    .with_inserted_indices(Indices::U32(indices));
+pub fn render_pending_chunks_mesh(
+    mut commands: Commands,
+    mut pending_chunks_mesh: ResMut<PendingChunksMesh>,
+    mut chunk_entities: ResMut<ChunkEntities>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+    block_atlas: Res<BlockAtlas>,
+) {
+    if pending_chunks_mesh.is_empty() {
+        return;
+    }
 
-    let chunk_material = StandardMaterial {
-        // base_color: Color::WHITE,
-        base_color_texture: Some(block_atlas.handle.clone()),
-        alpha_mode: AlphaMode::Mask(0.5),
-        ..default()
-    };
+    pending_chunks_mesh.retain(|chunk_pos, task| {
+        let status = block_on(future::poll_once(task));
 
-    let chunk_entity = commands
-        .spawn((
-            Mesh3d(meshes.add(mesh)),
-            MeshMaterial3d(materials.add(chunk_material)),
-            Transform::from_xyz(
-                (chunk_pos.x * CHUNK_SIZE as i32) as f32,
-                0.0,
-                (chunk_pos.z * CHUNK_SIZE as i32) as f32,
-            ),
-        ))
-        .id();
+        let retain = status.is_none();
 
-    chunk_entities.chunks.insert(chunk_pos, chunk_entity);
+        let Some(chunk_data) = status else {
+            return retain;
+        };
 
-    let elapsed = start.elapsed();
-    println!("Chunk mesh generation (finish): {elapsed:?}");
+        if let Some(prev_entity) = chunk_entities.chunks.get(chunk_pos) {
+            commands.entity(*prev_entity).despawn();
+            chunk_entities.chunks.remove(chunk_pos);
+        }
+
+        let mesh = Mesh::new(
+            bevy::mesh::PrimitiveTopology::TriangleList,
+            RenderAssetUsages::MAIN_WORLD | RenderAssetUsages::RENDER_WORLD,
+        )
+        .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, chunk_data.positions)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, chunk_data.normals)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_UV_0, chunk_data.uvs)
+        .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, chunk_data.colors)
+        .with_inserted_indices(Indices::U32(chunk_data.indices));
+
+        let chunk_material = StandardMaterial {
+            // base_color: Color::WHITE,
+            base_color_texture: Some(block_atlas.handle.clone()),
+            alpha_mode: AlphaMode::Mask(0.5),
+            ..default()
+        };
+
+        let chunk_entity = commands
+            .spawn((
+                Mesh3d(meshes.add(mesh)),
+                MeshMaterial3d(materials.add(chunk_material)),
+                Transform::from_xyz(
+                    (chunk_pos.x * CHUNK_SIZE as i32) as f32,
+                    0.0,
+                    (chunk_pos.z * CHUNK_SIZE as i32) as f32,
+                ),
+            ))
+            .id();
+
+        chunk_entities
+            .chunks
+            .insert(chunk_pos.clone(), chunk_entity);
+
+        retain
+    });
 }
 
 const FACE_POSITIONS: [[[f32; 3]; 4]; 6] = [
