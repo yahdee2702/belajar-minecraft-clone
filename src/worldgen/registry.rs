@@ -10,7 +10,6 @@ pub struct RegistryManager {
     next_id: u8,
 }
 
-
 #[derive(Debug)]
 pub struct RegisteredBlock {
     pub name: String,
@@ -26,25 +25,19 @@ impl RegistryManager {
         self.registered_blocks.iter()
     }
 
-    pub fn register_with_id(
-        &mut self, 
-        id: u8, 
-        name: impl Into<String>,
-        model: impl Into<String>,
-    ) {
-        self.registered_blocks.insert(id, RegisteredBlock {
-            name: name.into(),
-            model: model.into(),
-        });
+    pub fn register_with_id(&mut self, id: u8, name: impl Into<String>, model: impl Into<String>) {
+        self.registered_blocks.insert(
+            id,
+            RegisteredBlock {
+                name: name.into(),
+                model: model.into(),
+            },
+        );
 
         self.next_id = id + 1;
     }
 
-    pub fn register(
-        &mut self, 
-        name: impl Into<String>,
-        model: impl Into<String>,
-    ) {
+    pub fn register(&mut self, name: impl Into<String>, model: impl Into<String>) {
         self.register_with_id(self.next_id, name, model);
     }
 }
@@ -59,6 +52,8 @@ pub fn register_blocks(
     registry.register("stone", "models/stone.json");
     registry.register("glass", "models/glass.json");
     registry.register("plank", "models/plank.json");
+    registry.register("log", "models/log.json");
+    registry.register("leave", "models/leave.json");
 
     next_state.set(GameState::LoadingAsset);
 }

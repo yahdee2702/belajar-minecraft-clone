@@ -1,15 +1,12 @@
 use bevy::{
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
-    input::mouse::AccumulatedMouseMotion,
-    prelude::*,
-    window::{CursorGrabMode, CursorOptions},
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, input::mouse::AccumulatedMouseMotion, prelude::*, window::{CursorGrabMode, CursorOptions},
 };
 
 use crate::worldgen::{
-    chunks::{ChunkEntities, ChunkManager, ChunkPos, PendingChunks}, generation::generate_chunks, models::{
-        BlockModel, BlockModelsLoader, BlockModelsManager, Faces, PendingBlockModels,
+    chunks::{ChunkEntities, ChunkManager, PendingChunks}, generation::generate_chunks, models::{
+        BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels,
         collect_loaded_models,
-    }, registry::{AIR_BLOCK, RegistryManager, register_blocks}, rendering::{FACE_NEIGHBORS, render_pending_chunks}, textures::{BlockAtlas, prepare_block_atlas},
+    }, registry::{AIR_BLOCK, RegistryManager, register_blocks}, rendering::render_pending_chunks, textures::{BlockAtlas, prepare_block_atlas},
 };
 
 pub mod worldgen;
@@ -21,6 +18,7 @@ pub enum GameState {
     LoadingAsset,
     CollectingAsset,
     LoadingChunk,
+    BeforePlaying,
     Playing,
 }
 
@@ -54,15 +52,17 @@ fn main() {
             check_asset_collected.run_if(in_state(GameState::CollectingAsset)),
         )
         .add_systems(OnEnter(GameState::LoadingChunk), generate_chunks)
+        .add_systems(OnEnter(GameState::BeforePlaying), init_before_playing)
         .add_systems(OnEnter(GameState::Playing), setup_scene)
         .add_systems(
             Update,
             (
                 grab_mouse,
                 camera_movement_key,
-                raycast_test,
-                raycast_test2,
+                block_breaking,
+                block_placing,
                 render_pending_chunks,
+                block_switch,
             )
                 .run_if(in_state(GameState::Playing)),
         )
@@ -117,6 +117,17 @@ fn check_asset_collected(
     if progress.block_models_loaded {
         next_state.set(GameState::LoadingChunk);
     }
+}
+
+fn init_before_playing(
+    mut commands: Commands,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    commands.insert_resource(BlockHighlight {
+        block_id: 1,
+    });
+
+    next_state.set(GameState::Playing);
 }
 
 #[derive(Component)]
@@ -276,12 +287,32 @@ fn camera_movement_key(
     }
 }
 
-fn raycast_test(
+
+#[derive(Resource)]
+struct BlockHighlight {
+    block_id: u8,
+}
+
+fn block_switch(
+    mut block_highlight: ResMut<BlockHighlight>,
+    keyboard: Res<ButtonInput<KeyCode>>,
+) {
+    if keyboard.just_pressed(KeyCode::ArrowRight) {
+        let new_block = block_highlight.block_id + 1;
+        block_highlight.block_id = std::cmp::min(std::cmp::max(1, new_block), 7);
+    }
+
+    if keyboard.just_pressed(KeyCode::ArrowLeft) {
+        let new_block = block_highlight.block_id - 1;
+        block_highlight.block_id = std::cmp::min(std::cmp::max(1, new_block), 7);
+    }
+}
+
+fn block_breaking(
     camera: Single<&mut Transform, With<Camera3d>>,
     mouse: Res<ButtonInput<MouseButton>>,
     mut chunk_manager: ResMut<ChunkManager>,
     mut pending_chunks: ResMut<PendingChunks>,
-    registry: Res<RegistryManager>,
 ) {
     if mouse.just_pressed(MouseButton::Left) {
         let current_pos = camera.translation;
@@ -290,54 +321,25 @@ fn raycast_test(
         let Some((block, position_hit, _face_hit)) = chunk_manager.raycast_3d_dda(current_pos, direction, 30.0) else {
             return;
         };
-
-        let chunk_pos = ChunkPos::from_ivec2(chunk_manager.get_chunk_pos(position_hit));
-        let local_pos = chunk_manager.get_local_pos(position_hit);
-
-        let Some(registered_block) = registry.get(block) else {
-            return;
-        };
-
-        println!(
-            "Block ID: {0} | Block Name: {1}",
-            block, registered_block.name
-        );
+        
         if block == AIR_BLOCK {
             return;
         }
 
-        let Some(chunk) = chunk_manager.get_mut(&chunk_pos) else {
-            return;
-        };
+        chunk_manager.set_block_by_world_pos(position_hit, AIR_BLOCK);
 
-        chunk.set(local_pos, AIR_BLOCK);
-
-        for face in Faces::SIDES {
-            let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];
-            if let (_neighbor_block, Some(neighbor_chunk_pos)) = chunk_manager.get_neighbor(
-                &chunk_pos,
-                IVec3::new(
-                    local_pos.x as i32 + dx,
-                    local_pos.y as i32 + dy,
-                    local_pos.z as i32 + dz,
-                ),
-            ) {
-                if neighbor_chunk_pos != chunk_pos {
-                    pending_chunks.enqueue(neighbor_chunk_pos);
-                }
-            }
-        }
-
-        pending_chunks.enqueue(chunk_pos);
+        chunk_manager.update_neighbor_chunks_by_world_pos(position_hit, &mut pending_chunks);
+        
+        chunk_manager.update_chunk_by_world_pos(position_hit, &mut pending_chunks);
     }
 }
 
-fn raycast_test2(
+fn block_placing(
     camera: Single<&mut Transform, With<Camera3d>>,
     mouse: Res<ButtonInput<MouseButton>>,
+    block_highlight: Res<BlockHighlight>,
     mut chunk_manager: ResMut<ChunkManager>,
     mut pending_chunks: ResMut<PendingChunks>,
-    registry: Res<RegistryManager>,
 ) {
     if mouse.just_pressed(MouseButton::Right) {
         let current_pos = camera.translation;
@@ -347,43 +349,20 @@ fn raycast_test2(
             return;
         };
 
-        let chunk_pos = ChunkPos::from_ivec2(chunk_manager.get_chunk_pos(position_hit + face_hit));
-        let local_pos = chunk_manager.get_local_pos(position_hit + face_hit);
-
-        let Some(registered_block) = registry.get(block) else {
-            return;
-        };
-
-        println!(
-            "Block ID: {0} | Block Name: {1}",
-            block, registered_block.name
-        );
         if block == AIR_BLOCK {
             return;
         }
 
-        let Some(chunk) = chunk_manager.get_mut(&chunk_pos) else {
+        let world_pos = position_hit + face_hit;
+
+        if let Some(block_in_position) = chunk_manager.get_block_by_world_pos(world_pos) && block_in_position != AIR_BLOCK {
             return;
-        };
-
-        chunk.set(local_pos, 5);
-
-        for face in Faces::SIDES {
-            let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];
-            if let (_neighbor_block, Some(neighbor_chunk_pos)) = chunk_manager.get_neighbor(
-                &chunk_pos,
-                IVec3::new(
-                    local_pos.x as i32 + dx,
-                    local_pos.y as i32 + dy,
-                    local_pos.z as i32 + dz,
-                ),
-            ) {
-                if neighbor_chunk_pos != chunk_pos {
-                    pending_chunks.enqueue(neighbor_chunk_pos);
-                }
-            }
         }
 
-        pending_chunks.enqueue(chunk_pos);
+        chunk_manager.set_block_by_world_pos(world_pos, block_highlight.block_id);  
+        
+        chunk_manager.update_neighbor_chunks_by_world_pos(world_pos, &mut pending_chunks);
+
+        chunk_manager.update_chunk_by_world_pos(world_pos, &mut pending_chunks);
     }
 }

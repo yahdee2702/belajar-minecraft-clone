@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use bevy::{asset::RenderAssetUsages, mesh::Indices, prelude::*};
 
 use crate::worldgen::{
@@ -45,13 +47,11 @@ pub fn render_pending_chunks(
 
     let mut colors: Vec<[f32; 4]> = Vec::new();
 
+    let start = Instant::now();
     for y in 0..CHUNK_HEIGHT {
         for z in 0..CHUNK_SIZE {
             for x in 0..CHUNK_SIZE {
-                let block = chunk
-                    .get(x as usize, y as usize, z as usize)
-                    .unwrap()
-                    .clone();
+                let block = chunk.get(x, y, z).unwrap().clone();
 
                 if block == AIR_BLOCK {
                     continue;
@@ -117,7 +117,9 @@ pub fn render_pending_chunks(
                     }
 
                     let tint = if registered_block.name == "grass" && face == Faces::Top {
-                        [0.3, 0.8, 0.2, 1.0]
+                        [0.3, 1.0, 0.2, 1.0]
+                    } else if registered_block.name == "leave" {
+                        [0.271, 0.42, 0.208, 1.0]
                     } else {
                         [1.0, 1.0, 1.0, 1.0]
                     };
@@ -134,6 +136,9 @@ pub fn render_pending_chunks(
             }
         }
     }
+
+    let elapsed = start.elapsed();
+    println!("Chunk mesh generation (attribute generation): {elapsed:?}");
 
     let mesh = Mesh::new(
         bevy::mesh::PrimitiveTopology::TriangleList,
@@ -165,6 +170,9 @@ pub fn render_pending_chunks(
         .id();
 
     chunk_entities.chunks.insert(chunk_pos, chunk_entity);
+
+    let elapsed = start.elapsed();
+    println!("Chunk mesh generation (finish): {elapsed:?}");
 }
 
 const FACE_POSITIONS: [[[f32; 3]; 4]; 6] = [

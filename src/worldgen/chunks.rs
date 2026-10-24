@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use bevy::{platform::collections::HashMap, prelude::*};
 use noise::NoiseFn;
 
-use crate::worldgen::registry::AIR_BLOCK;
+use crate::worldgen::{models::Faces, registry::AIR_BLOCK, rendering::FACE_NEIGHBORS};
 
 pub const CHUNK_SIZE: usize = 16;
 pub const CHUNK_HEIGHT: usize = 64;
@@ -53,8 +53,8 @@ impl ChunkManager {
         self.get_from_vec(IVec2::new(x,z))
     }
 
-    pub fn get_block(&self, chunk_pos: ChunkPos, local_position: UVec3) -> Option<u8> {
-        let Some(chunk) = self.chunks.get(&chunk_pos) else {
+    pub fn get_block(&self, chunk_pos: &ChunkPos, local_position: UVec3) -> Option<u8> {
+        let Some(chunk) = self.chunks.get(chunk_pos) else {
             return None;
         };
 
@@ -62,7 +62,14 @@ impl ChunkManager {
     }
 
     pub fn get_block_from_vec(&self, chunk_pos: IVec2, local_position: UVec3) -> Option<u8> {
-        self.get_block(ChunkPos::new(chunk_pos.x, chunk_pos.y), local_position)
+        self.get_block(&ChunkPos::new(chunk_pos.x, chunk_pos.y), local_position)
+    }
+
+    pub fn get_block_by_world_pos(&self, world_pos: IVec3) -> Option<u8> {
+        let chunk_pos = self.get_chunk_pos(world_pos);
+        let local_pos = self.get_local_pos(world_pos);
+
+        self.get_block(&chunk_pos, local_pos)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&ChunkPos, &Chunk)> {
@@ -73,11 +80,16 @@ impl ChunkManager {
         self.chunks.iter_mut()
     }
     
-    pub fn get_chunk_pos(&self, position: IVec3) -> IVec2 {
+    pub fn get_chunk_pos_in_vec(&self, position: IVec3) -> IVec2 {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
 
         IVec2::new(chunk_x, chunk_z)
+    }
+
+    pub fn get_chunk_pos(&self, position: IVec3) -> ChunkPos {
+        let chunk_position = self.get_chunk_pos_in_vec(position);
+        ChunkPos::from_ivec2(chunk_position)
     }
 
     pub fn get_local_pos(&self, position: IVec3) -> UVec3 {
@@ -124,6 +136,52 @@ impl ChunkManager {
             .unwrap_or(AIR_BLOCK), Some(ChunkPos::new(chunk_x, chunk_z)))
     }
     
+    pub fn set_block(&mut self, chunk_pos: &ChunkPos, local_position: UVec3, block: u8) {
+        let Some(chunk) = self.get_mut(chunk_pos) else {
+            return;
+        };
+
+        chunk.set(local_position, block);
+    }
+
+    pub fn set_block_by_world_pos(&mut self, world_pos: IVec3, block: u8) {
+        let chunk_pos = self.get_chunk_pos(world_pos);
+        let local_pos = self.get_local_pos(world_pos);
+
+        let Some(chunk) = self.get_mut(&chunk_pos) else {
+            return;
+        };
+
+        chunk.set(local_pos, block);
+    }
+
+    pub fn update_chunk_by_world_pos(&self, world_pos: IVec3, pending_chunks: &mut PendingChunks) {
+        let chunk_pos = self.get_chunk_pos(world_pos);
+
+        pending_chunks.enqueue(chunk_pos);
+    }
+
+    pub fn update_neighbor_chunks_by_world_pos(&self, world_pos: IVec3, pending_chunks: &mut PendingChunks) {
+        let chunk_pos = self.get_chunk_pos(world_pos);
+        let local_pos = self.get_local_pos(world_pos);
+
+        for face in Faces::SIDES {
+            let [dx, dy, dz] = FACE_NEIGHBORS[face as usize];
+            if let (neighbor_block, Some(neighbor_chunk_pos)) = self.get_neighbor(
+                &chunk_pos,
+                IVec3::new(
+                    local_pos.x as i32 + dx,
+                    local_pos.y as i32 + dy,
+                    local_pos.z as i32 + dz,
+                ),
+            ) {
+                if neighbor_chunk_pos != chunk_pos && neighbor_block != AIR_BLOCK {
+                    pending_chunks.enqueue(neighbor_chunk_pos);
+                }
+            }
+        }
+    }
+
     // Old Raycast (I made it myself)
     pub fn raycast(&self, current: Vec3, direction: Vec3, distance: f32) -> (u8, UVec3, ChunkPos) {
         let current_offseted = current - Vec3::splat(0.5);
@@ -137,7 +195,7 @@ impl ChunkManager {
                 .ceil()
                 .as_ivec3();
 
-            chunk_pos = self.get_chunk_pos(pos);
+            chunk_pos = self.get_chunk_pos_in_vec(pos);
             local_pos = self.get_local_pos(pos);
             
             block = self.get_block_from_vec(chunk_pos, local_pos).unwrap_or(AIR_BLOCK);
@@ -253,7 +311,7 @@ impl ChunkManager {
                 let local_pos = self.get_local_pos(voxel);
 
                 let block = self
-                    .get_block_from_vec(chunk_pos, local_pos)
+                    .get_block(&chunk_pos, local_pos)
                     .unwrap_or(AIR_BLOCK);
 
                 if block != AIR_BLOCK {
@@ -298,7 +356,7 @@ impl PendingChunks {
     }
 
     pub fn pop_next(&mut self) -> Option<ChunkPos> {
-        self.chunks.pop_front()
+        self.chunks.pop_back()
     }
 
     pub fn is_empty(&self) -> bool {

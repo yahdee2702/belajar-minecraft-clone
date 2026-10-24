@@ -1,0 +1,65 @@
+{
+    "name": "log",
+    "face": {
+        "top": {
+            "tile": {
+                "x": 14,
+                "y": 13
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "bottom": {
+            "tile": {
+                "x": 14,
+                "y": 13
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "right": {
+            "tile": {
+                "x": 13,
+                "y": 13
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "left": {
+            "tile": {
+                "x": 13,
+                "y": 13
+            },
+            "rotation": "none",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "front": {
+            "tile": {
+                "x": 13,
+                "y": 13
+            },
+            "rotation": "rotate270",
+            "culling": {
+                "mode": "default"
+            }
+        },
+        "back": {
+            "tile": {
+                "x": 13,
+                "y": 13
+            },
+            "rotation": "rotate270",
+            "culling": {
+                "mode": "default"
+            }
+        }
+    }
+}

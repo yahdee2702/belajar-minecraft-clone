@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use bevy::prelude::*;
 use noise::Perlin;
 
@@ -8,10 +10,11 @@ pub fn generate_chunks(
     mut pending_chunks: ResMut<PendingChunks>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    let seed = 21919201;
+    let start = Instant::now();
+    let seed = rand::random_range(1..1000000);
     let perlin = Perlin::new(seed);
 
-    let chunk_width = 8;
+    let chunk_width = 4;
 
     for chunk_x in 0..chunk_width {
         for chunk_z in 0..chunk_width {
@@ -28,5 +31,7 @@ pub fn generate_chunks(
         }
     }
 
-    next_state.set(GameState::Playing);
+    next_state.set(GameState::BeforePlaying);
+    let elapsed = start.elapsed();
+    println!("Chunk terrain generation: {elapsed:?}");
 }
