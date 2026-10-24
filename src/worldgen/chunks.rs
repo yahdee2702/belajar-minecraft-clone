@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use bevy::{platform::collections::HashMap, prelude::*};
-use noise::NoiseFn;
+use noise::{NoiseFn, Perlin};
 
 use crate::worldgen::{models::Faces, registry::AIR_BLOCK, rendering::FACE_NEIGHBORS};
 
@@ -27,6 +27,12 @@ impl ChunkPos {
     }
 }
 
+#[derive(Resource, Debug)]
+pub struct ChunkInfo {
+    pub seed: u32,
+    pub perlin: Perlin,
+}
+
 #[derive(Resource, Clone, Debug, Default)]
 pub struct ChunkManager {
     chunks: HashMap<ChunkPos, Chunk>
@@ -39,6 +45,10 @@ impl ChunkManager {
 
     pub fn get(&self, pos: &ChunkPos) -> Option<&Chunk> {
         self.chunks.get(pos)
+    }
+
+    pub fn exists(&self, pos: &ChunkPos) -> bool {
+        self.chunks.contains_key(pos)
     }
 
     pub fn get_mut(&mut self, pos: &ChunkPos) -> Option<&mut Chunk> {
@@ -359,6 +369,10 @@ impl PendingChunks {
         self.chunks.push_front(chunk_position);
     }
 
+    pub fn in_queue(&self, chunk_position: ChunkPos) -> bool {
+        self.chunks.contains(&chunk_position)
+    }
+
     pub fn pop_next(&mut self) -> Option<ChunkPos> {
         self.chunks.pop_back()
     }
@@ -366,6 +380,11 @@ impl PendingChunks {
     pub fn is_empty(&self) -> bool {
         self.chunks.is_empty()
     }
+}
+
+#[derive(Resource, Debug, Default)]
+pub struct PendingChunksGeneration {
+    chunks: VecDeque<ChunkPos>
 }
 
 #[derive(Clone, Debug, Default)]

@@ -1,17 +1,13 @@
 use bevy::{
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll}, prelude::*, window::{CursorGrabMode, CursorOptions, PresentMode},
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll}, prelude::*, window::{CursorGrabMode, CursorOptions},
 };
+use noise::Perlin;
 
 use crate::worldgen::{
-    chunks::{ChunkEntities, ChunkManager, PendingChunks},
-    generation::generate_chunks,
-    models::{
+    chunks::{ChunkInfo, ChunkEntities, ChunkManager, PendingChunks}, generation::generate_chunks, models::{
         BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels,
         collect_loaded_models,
-    },
-    registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks},
-    rendering::{PendingChunksMesh, render_pending_chunks, render_pending_chunks_mesh},
-    textures::{BlockAtlas, prepare_block_atlas},
+    }, registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks}, rendering::{PendingChunksMesh, render_pending_chunks, render_pending_chunks_mesh}, textures::{BlockAtlas, prepare_block_atlas},
 };
 
 pub mod worldgen;
@@ -22,7 +18,6 @@ pub enum GameState {
     Registering,
     LoadingAsset,
     CollectingAsset,
-    LoadingChunk,
     BeforePlaying,
     Playing,
 }
@@ -60,19 +55,19 @@ fn main() {
             FixedUpdate,
             check_asset_collected.run_if(in_state(GameState::CollectingAsset)),
         )
-        .add_systems(OnEnter(GameState::LoadingChunk), generate_chunks)
         .add_systems(OnEnter(GameState::BeforePlaying), init_before_playing)
         .add_systems(OnEnter(GameState::Playing), setup_scene)
         .add_systems(
             Update,
             (
-                grab_mouse,
-                camera_movement_key,
-                block_breaking,
-                block_placing,
+                generate_chunks,
                 render_pending_chunks,
                 render_pending_chunks_mesh,
+                grab_mouse,
+                camera_movement_key,
                 block_switch,
+                block_breaking,
+                block_placing,
             )
                 .run_if(in_state(GameState::Playing)),
         )
@@ -125,12 +120,18 @@ fn check_asset_collected(
     mut next_state: ResMut<NextState<GameState>>,
 ) {
     if progress.block_models_loaded {
-        next_state.set(GameState::LoadingChunk);
+        next_state.set(GameState::BeforePlaying);
     }
 }
 
 fn init_before_playing(mut commands: Commands, mut next_state: ResMut<NextState<GameState>>) {
     commands.insert_resource(BlockHighlight { block_id: 1 });
+
+    let seed =rand::random_range(1..1000000); 
+    commands.insert_resource(ChunkInfo {
+        seed: seed,
+        perlin: Perlin::new(seed),
+    });
 
     next_state.set(GameState::Playing);
 }
