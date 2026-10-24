@@ -373,9 +373,9 @@ fn block_breaking(
 
         chunk_manager.set_block_by_world_pos(position_hit, AIR_BLOCK);
 
-        chunk_manager.update_neighbor_chunks_by_world_pos(position_hit, &mut pending_chunks);
-
         chunk_manager.update_chunk_by_world_pos(position_hit, &mut pending_chunks);
+        
+        chunk_manager.update_neighbor_chunks_by_world_pos(position_hit, &mut pending_chunks);
     }
 }
 
