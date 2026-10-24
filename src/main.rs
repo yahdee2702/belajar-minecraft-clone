@@ -1,12 +1,17 @@
 use bevy::{
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, input::mouse::AccumulatedMouseMotion, prelude::*, window::{CursorGrabMode, CursorOptions},
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll}, prelude::*, window::{CursorGrabMode, CursorOptions, PresentMode},
 };
 
 use crate::worldgen::{
-    chunks::{ChunkEntities, ChunkManager, PendingChunks}, generation::generate_chunks, models::{
+    chunks::{ChunkEntities, ChunkManager, PendingChunks},
+    generation::generate_chunks,
+    models::{
         BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels,
         collect_loaded_models,
-    }, registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks}, rendering::{PendingChunksMesh, render_pending_chunks, render_pending_chunks_mesh}, textures::{BlockAtlas, prepare_block_atlas},
+    },
+    registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks},
+    rendering::{PendingChunksMesh, render_pending_chunks, render_pending_chunks_mesh},
+    textures::{BlockAtlas, prepare_block_atlas},
 };
 
 pub mod worldgen;
@@ -47,7 +52,10 @@ fn main() {
             FixedUpdate,
             check_asset_loaded.run_if(in_state(GameState::LoadingAsset)),
         )
-        .add_systems(OnEnter(GameState::CollectingAsset), (collect_loaded_models, prepare_block_atlas))
+        .add_systems(
+            OnEnter(GameState::CollectingAsset),
+            (collect_loaded_models, prepare_block_atlas),
+        )
         .add_systems(
             FixedUpdate,
             check_asset_collected.run_if(in_state(GameState::CollectingAsset)),
@@ -121,13 +129,8 @@ fn check_asset_collected(
     }
 }
 
-fn init_before_playing(
-    mut commands: Commands,
-    mut next_state: ResMut<NextState<GameState>>,
-) {
-    commands.insert_resource(BlockHighlight {
-        block_id: 1,
-    });
+fn init_before_playing(mut commands: Commands, mut next_state: ResMut<NextState<GameState>>) {
+    commands.insert_resource(BlockHighlight { block_id: 1 });
 
     next_state.set(GameState::Playing);
 }
@@ -137,6 +140,9 @@ struct NormalText;
 
 #[derive(Component)]
 struct FpsText;
+
+#[derive(Component)]
+struct BlockText;
 
 fn setup_scene(mut commands: Commands) {
     // Circle Table Mesh
@@ -173,7 +179,7 @@ fn setup_scene(mut commands: Commands) {
         Node {
             position_type: PositionType::Absolute,
             top: px(12),
-            left: percent(50),
+            left: px(12),
             ..default()
         },
         NormalText,
@@ -184,10 +190,21 @@ fn setup_scene(mut commands: Commands) {
         Node {
             position_type: PositionType::Absolute,
             top: px(12),
-            left: px(12),
+            right: px(12),
             ..default()
         },
         FpsText,
+    ));
+
+    commands.spawn((
+        Text::new("Block: grass"),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: px(12),
+            right: px(12),
+            ..default()
+        },
+        BlockText,
     ));
 
     commands.spawn((
@@ -289,7 +306,6 @@ fn camera_movement_key(
     }
 }
 
-
 #[derive(Resource)]
 struct BlockHighlight {
     block_id: u8,
@@ -297,16 +313,30 @@ struct BlockHighlight {
 
 fn block_switch(
     mut block_highlight: ResMut<BlockHighlight>,
-    keyboard: Res<ButtonInput<KeyCode>>,
+    mut normal_text: Query<&mut Text, With<BlockText>>,
+    accumulated_scroll: Res<AccumulatedMouseScroll>,
+    registry: Res<SharedRegistryManager>,
 ) {
-    if keyboard.just_pressed(KeyCode::ArrowRight) {
-        let new_block = block_highlight.block_id + 1;
-        block_highlight.block_id = std::cmp::min(std::cmp::max(1, new_block), 7);
+    let old_block = block_highlight.block_id;
+    let mut new_block = block_highlight.block_id;
+
+    let delta = accumulated_scroll.delta;
+    if delta != Vec2::ZERO {
+        if delta.y > 0.0 {
+            new_block += 1;
+        }
+
+        if delta.y < 0.0 {
+            new_block -= 1;
+        }
     }
 
-    if keyboard.just_pressed(KeyCode::ArrowLeft) {
-        let new_block = block_highlight.block_id - 1;
-        block_highlight.block_id = std::cmp::min(std::cmp::max(1, new_block), 7);
+    if old_block != new_block {
+        new_block = std::cmp::min(std::cmp::max(1, new_block), 7);
+        block_highlight.block_id = new_block;
+        for mut text in normal_text.iter_mut() {
+            text.0 = format!("Block: {0}", registry.get(new_block).unwrap().name).to_string();
+        }
     }
 }
 
@@ -320,10 +350,12 @@ fn block_breaking(
         let current_pos = camera.translation;
         let direction = camera.forward().normalize_or_zero();
 
-        let Some((block, position_hit, _face_hit)) = chunk_manager.raycast_3d_dda(current_pos, direction, 30.0) else {
+        let Some((block, position_hit, _face_hit)) =
+            chunk_manager.raycast_3d_dda(current_pos, direction, 30.0)
+        else {
             return;
         };
-        
+
         if block == AIR_BLOCK {
             return;
         }
@@ -331,7 +363,7 @@ fn block_breaking(
         chunk_manager.set_block_by_world_pos(position_hit, AIR_BLOCK);
 
         chunk_manager.update_neighbor_chunks_by_world_pos(position_hit, &mut pending_chunks);
-        
+
         chunk_manager.update_chunk_by_world_pos(position_hit, &mut pending_chunks);
     }
 }
@@ -347,7 +379,9 @@ fn block_placing(
         let current_pos = camera.translation;
         let direction = camera.forward().normalize_or_zero();
 
-        let Some((block, position_hit, face_hit)) = chunk_manager.raycast_3d_dda(current_pos, direction, 30.0) else {
+        let Some((block, position_hit, face_hit)) =
+            chunk_manager.raycast_3d_dda(current_pos, direction, 30.0)
+        else {
             return;
         };
 
@@ -357,12 +391,14 @@ fn block_placing(
 
         let world_pos = position_hit + face_hit;
 
-        if let Some(block_in_position) = chunk_manager.get_block_by_world_pos(world_pos) && block_in_position != AIR_BLOCK {
+        if let Some(block_in_position) = chunk_manager.get_block_by_world_pos(world_pos)
+            && block_in_position != AIR_BLOCK
+        {
             return;
         }
 
-        chunk_manager.set_block_by_world_pos(world_pos, block_highlight.block_id);  
-        
+        chunk_manager.set_block_by_world_pos(world_pos, block_highlight.block_id);
+
         chunk_manager.update_neighbor_chunks_by_world_pos(world_pos, &mut pending_chunks);
 
         chunk_manager.update_chunk_by_world_pos(world_pos, &mut pending_chunks);
