@@ -1,13 +1,21 @@
 use bevy::{
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin}, input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll}, prelude::*, window::{CursorGrabMode, CursorOptions},
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
+    prelude::*,
+    window::{CursorGrabMode, CursorOptions},
 };
 use noise::Perlin;
 
 use crate::worldgen::{
-    chunks::{ChunkInfo, ChunkEntities, ChunkManager, PendingChunks}, generation::generate_chunks, models::{
+    chunks::{ChunkEntities, ChunkInfo, ChunkManager, PendingChunks},
+    generation::{begin_rendering_chunks, generate_chunks, remove_out_of_range_chunks},
+    models::{
         BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels,
         collect_loaded_models,
-    }, registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks}, rendering::{PendingChunksMesh, render_pending_chunks, render_pending_chunks_mesh}, textures::{BlockAtlas, prepare_block_atlas},
+    },
+    registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks},
+    rendering::{PendingChunksMesh, render_pending_chunks, render_pending_chunks_mesh},
+    textures::{BlockAtlas, prepare_block_atlas},
 };
 
 pub mod worldgen;
@@ -61,6 +69,8 @@ fn main() {
             Update,
             (
                 generate_chunks,
+                begin_rendering_chunks,
+                remove_out_of_range_chunks,
                 render_pending_chunks,
                 render_pending_chunks_mesh,
                 grab_mouse,
@@ -127,7 +137,7 @@ fn check_asset_collected(
 fn init_before_playing(mut commands: Commands, mut next_state: ResMut<NextState<GameState>>) {
     commands.insert_resource(BlockHighlight { block_id: 1 });
 
-    let seed =rand::random_range(1..1000000); 
+    let seed = rand::random_range(1..1000000);
     commands.insert_resource(ChunkInfo {
         seed: seed,
         perlin: Perlin::new(seed),

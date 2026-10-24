@@ -17,13 +17,19 @@ pub struct ChunkPos {
 
 impl ChunkPos {
     pub fn new(x: i32, z: i32) -> ChunkPos {
-        ChunkPos {
-            x, z,
-        }
+        ChunkPos { x, z }
     }
 
     pub fn from_ivec2(vec: IVec2) -> ChunkPos {
         ChunkPos::new(vec.x, vec.y)
+    }
+
+    pub fn as_ivec2(&self) -> IVec2 {
+        IVec2::new(self.x, self.z)
+    }
+
+    pub fn distance_squared(&self, from: ChunkPos) -> i32 {
+        self.as_ivec2().distance_squared(from.as_ivec2())
     }
 }
 
@@ -35,7 +41,7 @@ pub struct ChunkInfo {
 
 #[derive(Resource, Clone, Debug, Default)]
 pub struct ChunkManager {
-    chunks: HashMap<ChunkPos, Chunk>
+    chunks: HashMap<ChunkPos, Chunk>,
 }
 
 impl ChunkManager {
@@ -60,7 +66,7 @@ impl ChunkManager {
     }
 
     pub fn get_from_xz(&self, x: i32, z: i32) -> Option<&Chunk> {
-        self.get_from_vec(IVec2::new(x,z))
+        self.get_from_vec(IVec2::new(x, z))
     }
 
     pub fn get_block(&self, chunk_pos: &ChunkPos, local_position: UVec3) -> Option<u8> {
@@ -68,7 +74,11 @@ impl ChunkManager {
             return None;
         };
 
-        chunk.get(local_position.x as usize, local_position.y as usize, local_position.z as usize)
+        chunk.get(
+            local_position.x as usize,
+            local_position.y as usize,
+            local_position.z as usize,
+        )
     }
 
     pub fn get_block_from_vec(&self, chunk_pos: IVec2, local_position: UVec3) -> Option<u8> {
@@ -89,7 +99,17 @@ impl ChunkManager {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = (&ChunkPos, &mut Chunk)> {
         self.chunks.iter_mut()
     }
-    
+
+    pub fn iter_out_of_range(
+        &self,
+        chunk_pos: ChunkPos,
+        range: i32,
+    ) -> impl Iterator<Item = (&ChunkPos, &Chunk)> {
+        self.iter()
+            .filter(move |(pos, _chunk)| pos.distance_squared(chunk_pos) > (range * range))
+            .into_iter()
+    }
+
     pub fn get_chunk_pos_in_vec(&self, position: IVec3) -> IVec2 {
         let chunk_x = position.x.div_euclid(CHUNK_SIZE as i32);
         let chunk_z = position.z.div_euclid(CHUNK_SIZE as i32);
@@ -105,15 +125,19 @@ impl ChunkManager {
     pub fn get_local_pos(&self, position: IVec3) -> UVec3 {
         let local_x = position.x.rem_euclid(CHUNK_SIZE as i32) as usize;
         let local_z = position.z.rem_euclid(CHUNK_SIZE as i32) as usize;
-        
+
         UVec3::new(
-            local_x as u32, 
-            position.y.clamp(0, CHUNK_HEIGHT as i32) as u32, 
+            local_x as u32,
+            position.y.clamp(0, CHUNK_HEIGHT as i32) as u32,
             local_z as u32,
         )
     }
 
-    pub fn get_neighbor(&self, chunk_pos: &ChunkPos, target_position: IVec3) -> (u8, Option<ChunkPos>) {
+    pub fn get_neighbor(
+        &self,
+        chunk_pos: &ChunkPos,
+        target_position: IVec3,
+    ) -> (u8, Option<ChunkPos>) {
         if target_position.y < 0 || target_position.y >= (CHUNK_HEIGHT as i32) {
             return (AIR_BLOCK, None);
         }
@@ -135,17 +159,20 @@ impl ChunkManager {
         let target_chunk = if chunk_x == chunk_pos.x && chunk_z == chunk_pos.z {
             chunk
         } else {
-            match self.get_from_xz(chunk_x, chunk_z){
+            match self.get_from_xz(chunk_x, chunk_z) {
                 Some(neighbor_chunk) => neighbor_chunk,
                 None => return (AIR_BLOCK, None),
             }
         };
 
-        (target_chunk
-            .get(local_x, target_position.y as usize, local_z)
-            .unwrap_or(AIR_BLOCK), Some(ChunkPos::new(chunk_x, chunk_z)))
+        (
+            target_chunk
+                .get(local_x, target_position.y as usize, local_z)
+                .unwrap_or(AIR_BLOCK),
+            Some(ChunkPos::new(chunk_x, chunk_z)),
+        )
     }
-    
+
     pub fn set_block(&mut self, chunk_pos: &ChunkPos, local_position: UVec3, block: u8) {
         let Some(chunk) = self.get_mut(chunk_pos) else {
             return;
@@ -171,7 +198,11 @@ impl ChunkManager {
         pending_chunks.enqueue(chunk_pos);
     }
 
-    pub fn update_neighbor_chunks_by_world_pos(&self, world_pos: IVec3, pending_chunks: &mut PendingChunks) {
+    pub fn update_neighbor_chunks_by_world_pos(
+        &self,
+        world_pos: IVec3,
+        pending_chunks: &mut PendingChunks,
+    ) {
         let chunk_pos = self.get_chunk_pos(world_pos);
         let local_pos = self.get_local_pos(world_pos);
 
@@ -211,9 +242,11 @@ impl ChunkManager {
 
             chunk_pos = self.get_chunk_pos_in_vec(pos);
             local_pos = self.get_local_pos(pos);
-            
-            block = self.get_block_from_vec(chunk_pos, local_pos).unwrap_or(AIR_BLOCK);
-            
+
+            block = self
+                .get_block_from_vec(chunk_pos, local_pos)
+                .unwrap_or(AIR_BLOCK);
+
             cur_dist += 1.0;
         }
 
@@ -324,9 +357,7 @@ impl ChunkManager {
                 let chunk_pos = self.get_chunk_pos(voxel);
                 let local_pos = self.get_local_pos(voxel);
 
-                let block = self
-                    .get_block(&chunk_pos, local_pos)
-                    .unwrap_or(AIR_BLOCK);
+                let block = self.get_block(&chunk_pos, local_pos).unwrap_or(AIR_BLOCK);
 
                 if block != AIR_BLOCK {
                     return Some((block, voxel, face_normal));
@@ -356,12 +387,12 @@ impl ChunkManager {
 
 #[derive(Resource, Debug, Default)]
 pub struct ChunkEntities {
-    pub chunks: HashMap<ChunkPos, Entity>
+    pub chunks: HashMap<ChunkPos, Entity>,
 }
 
 #[derive(Resource, Debug, Default)]
 pub struct PendingChunks {
-    chunks: VecDeque<ChunkPos>
+    chunks: VecDeque<ChunkPos>,
 }
 
 impl PendingChunks {
@@ -384,12 +415,12 @@ impl PendingChunks {
 
 #[derive(Resource, Debug, Default)]
 pub struct PendingChunksGeneration {
-    chunks: VecDeque<ChunkPos>
+    chunks: VecDeque<ChunkPos>,
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Chunk {
-    blocks: Vec<u8>
+    blocks: Vec<u8>,
 }
 
 impl Chunk {
@@ -404,7 +435,11 @@ impl Chunk {
     }
 
     pub fn set(&mut self, position: UVec3, block: u8) {
-        let index = Chunk::index(position.x as usize, position.y as usize, position.z as usize);
+        let index = Chunk::index(
+            position.x as usize,
+            position.y as usize,
+            position.z as usize,
+        );
         self.blocks[index] = block;
     }
 
@@ -425,7 +460,7 @@ impl Chunk {
     }
 
     pub fn get(&self, x: usize, y: usize, z: usize) -> Option<u8> {
-        self.blocks.get(Chunk::index(x,y,z)).cloned()
+        self.blocks.get(Chunk::index(x, y, z)).cloned()
     }
 
     pub fn perlin_generation(&mut self, perlin: &noise::Perlin, pos: ChunkPos) {
@@ -438,7 +473,9 @@ impl Chunk {
                 let high = perlin.get([world_x as f64 * 0.04, world_z as f64 * 0.04]);
 
                 let noise = low * 0.8 + high * 0.2;
-                let height = (24.0 + noise * 12.0).floor().clamp(0.0, CHUNK_HEIGHT as f64);
+                let height = (24.0 + noise * 12.0)
+                    .floor()
+                    .clamp(0.0, CHUNK_HEIGHT as f64);
 
                 for y in 0..height as usize {
                     let percentage = y as f64 / (height - 1.0);
@@ -453,7 +490,7 @@ impl Chunk {
             }
         }
     }
-    
+
     pub fn with_perlin_generation(mut self, perlin: &noise::Perlin, pos: ChunkPos) -> Self {
         self.perlin_generation(perlin, pos);
         self
