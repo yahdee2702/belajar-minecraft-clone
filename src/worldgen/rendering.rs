@@ -1,11 +1,21 @@
 use std::sync::Arc;
 
 use bevy::{
-    asset::RenderAssetUsages, ecs::entity::Entities, mesh::Indices, platform::collections::HashMap, prelude::*, tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future},
+    asset::RenderAssetUsages,
+    ecs::entity::Entities,
+    mesh::Indices,
+    platform::collections::HashMap,
+    prelude::*,
+    tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future},
 };
 
 use crate::worldgen::{
-    chunks::{CHUNK_HEIGHT, CHUNK_SIZE, Chunk, ChunkEntities, ChunkManager, ChunkPos, PendingChunks}, models::{BlockModelsManager, CullingMode, Faces, SharedBlockModelsManager}, registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager}, textures::BlockAtlas,
+    chunks::{
+        CHUNK_HEIGHT, CHUNK_SIZE, Chunk, ChunkEntities, ChunkManager, ChunkPos, PendingChunks,
+    },
+    models::{BlockModelsManager, CullingMode, Faces, SharedBlockModelsManager},
+    registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager},
+    textures::BlockAtlas,
 };
 
 const RENDERING_SIZE: i32 = 6;
@@ -64,15 +74,15 @@ pub fn render_pending_chunks(
     let task_pool = AsyncComputeTaskPool::get();
 
     let atlas_size = block_atlas.size;
-    
-    let registry     = Arc::clone(&registry.registry_manager);
+
+    let registry = Arc::clone(&registry.registry_manager);
     let models_manager = Arc::clone(&models_manager.models_manager);
     let cloned_models_manager = (*models_manager).clone();
 
     // TODO: NEED to find a better way for this
     let cloned_chunk_manager = (*chunk_manager).clone();
 
-    let task: Task<ChunkMeshAttributes> = task_pool.spawn(async move {        
+    let task: Task<ChunkMeshAttributes> = task_pool.spawn(async move {
         let chunk = cloned_chunk_manager.get(&chunk_pos).unwrap();
 
         render_chunk_mesh(
@@ -132,7 +142,9 @@ pub fn remove_out_of_range_chunks(
             continue;
         }
 
-        if let Some(entity) = chunk_entities.chunks.get(&chunk_pos) && entities.contains_spawned(*entity) {
+        if let Some(entity) = chunk_entities.chunks.get(&chunk_pos)
+            && entities.contains_spawned(*entity)
+        {
             commands.entity(*entity).despawn();
             chunk_entities.chunks.remove(&chunk_pos);
         }
@@ -242,7 +254,13 @@ pub fn render_chunk_mesh(
         }
     }
 
-    ChunkMeshAttributes { positions, normals, uvs, indices, colors }
+    ChunkMeshAttributes {
+        positions,
+        normals,
+        uvs,
+        indices,
+        colors,
+    }
 }
 
 pub fn render_pending_chunks_mesh(

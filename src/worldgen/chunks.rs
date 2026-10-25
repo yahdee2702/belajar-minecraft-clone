@@ -44,6 +44,7 @@ pub struct ChunkInfo {
 #[derive(Resource, Clone, Debug, Default)]
 pub struct ChunkManager {
     chunks: HashMap<ChunkPos, Chunk>,
+    chunks_pending_blocks: HashMap<ChunkPos, Vec<(u8, UVec3)>>,
 }
 
 impl ChunkManager {
@@ -188,10 +189,35 @@ impl ChunkManager {
         let local_pos = self.get_local_pos(world_pos);
 
         let Some(chunk) = self.get_mut(&chunk_pos) else {
+            self.insert_pending_blocks(chunk_pos, local_pos, block);
             return;
         };
 
         chunk.set(local_pos, block);
+    }
+
+    pub fn insert_pending_blocks(&mut self, chunk_pos: ChunkPos, local_pos: UVec3, block: u8) {
+        if self.exists(&chunk_pos) {
+            return;
+        }
+
+        let block_list = self.chunks_pending_blocks.entry(chunk_pos).or_default();
+
+        block_list.push((block, local_pos));
+    }
+
+    pub fn fill_pending_blocks(&mut self, chunk_pos: ChunkPos, chunk: &mut Chunk) {
+        let Some(block_list) = self.chunks_pending_blocks.get_mut(&chunk_pos) else {
+            return;
+        };
+
+        block_list.retain(|(block, local_pos)| {
+            chunk.set(*local_pos, *block);
+
+            true
+        });
+
+        self.chunks_pending_blocks.remove(&chunk_pos);
     }
 
     pub fn update_chunk_by_world_pos(&self, world_pos: IVec3, pending_chunks: &mut PendingChunks) {
@@ -419,11 +445,6 @@ impl PendingChunks {
     }
 }
 
-#[derive(Resource, Debug, Default)]
-pub struct PendingChunksGeneration {
-    chunks: VecDeque<ChunkPos>,
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct Chunk {
     blocks: Vec<u8>,
@@ -470,11 +491,10 @@ impl Chunk {
     }
 
     pub fn perlin_generation(
-        &mut self, 
+        &mut self,
         base_perlin: &Fbm<Perlin>,
         mountain_perlin: &Fbm<Perlin>,
-        forest_perlin: &Fbm<Perlin>,
-        pos: ChunkPos
+        pos: ChunkPos,
     ) {
         for x in 0..CHUNK_SIZE {
             for z in 0..CHUNK_SIZE {
@@ -490,7 +510,7 @@ impl Chunk {
 
                 for y in 0..height as usize {
                     let percentage = y as f64 / (height - 1.0);
-                    
+
                     if percentage >= 1.0 {
                         self.set(UVec3::new(x as u32, y as u32, z as u32), 1);
                     } else if percentage >= 0.7 {
@@ -502,9 +522,4 @@ impl Chunk {
             }
         }
     }
-
-    // pub fn with_perlin_generation(mut self, perlin: &Fbm<Perlin>, pos: ChunkPos) -> Self {
-    //     self.perlin_generation(perlin, pos);
-    //     self
-    // }
 }

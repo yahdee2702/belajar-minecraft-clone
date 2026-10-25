@@ -7,13 +7,18 @@ use bevy::{
 use noise::{Fbm, MultiFractal, Perlin};
 
 use crate::worldgen::{
-    chunks::{ChunkEntities, ChunkInfo, ChunkManager, PendingChunks}, generation::{LoadedStructure, generate_chunks, generate_structures}, models::{
+    chunks::{ChunkEntities, ChunkInfo, ChunkManager, PendingChunks},
+    generation::{LoadedStructure, generate_chunks, generate_structures},
+    models::{
         BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels,
         collect_loaded_models,
-    }, registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks}, rendering::{
+    },
+    registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks},
+    rendering::{
         PendingChunksMesh, remove_out_of_range_chunks, render_chunks_in_range,
         render_pending_chunks, render_pending_chunks_mesh,
-    }, textures::{BlockAtlas, prepare_block_atlas},
+    },
+    textures::{BlockAtlas, prepare_block_atlas},
 };
 
 pub mod worldgen;
@@ -80,7 +85,8 @@ fn main() {
                     block_breaking,
                     block_placing,
                 ),
-            ).run_if(in_state(GameState::Playing)),
+            )
+                .run_if(in_state(GameState::Playing)),
         )
         .run();
 }
@@ -430,8 +436,6 @@ fn block_placing(
         }
 
         chunk_manager.set_block_by_world_pos(world_pos, block_highlight.block_id);
-
-        println!("world_position: {0}: {1} - {2} - {3}", block, world_pos.x, world_pos.y, world_pos.z);
 
         chunk_manager.update_neighbor_chunks_by_world_pos(world_pos, &mut pending_chunks);
 
