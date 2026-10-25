@@ -171,13 +171,13 @@ pub fn generate_structures(
 
     for chunk_x in -SIMULATION_SIZE..=SIMULATION_SIZE {
         for chunk_z in -SIMULATION_SIZE..=SIMULATION_SIZE {
-            let mut existing_trees: Vec<IVec3> = Vec::new();
             let pos = ChunkPos::new(chunk_x + current_chunk_pos.x, chunk_z + current_chunk_pos.z);
-
+            
             if !manager.exists(&pos) || loaded_structure.chunks.contains(&pos) {
                 continue;
             }
-
+            
+            let mut existing_trees: Vec<IVec3> = Vec::new();
             for x in 0..CHUNK_SIZE {
                 for z in 0..CHUNK_SIZE {
                     let world_x = pos.x * CHUNK_SIZE as i32 + x as i32;
