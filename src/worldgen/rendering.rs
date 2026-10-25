@@ -1,16 +1,15 @@
 use std::sync::Arc;
 
 use bevy::{
-    asset::RenderAssetUsages,
-    mesh::Indices,
-    platform::collections::HashMap,
-    prelude::*,
-    tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future},
+    asset::RenderAssetUsages, ecs::entity::Entities, mesh::Indices, platform::collections::HashMap, prelude::*, tasks::{AsyncComputeTaskPool, Task, block_on, futures_lite::future},
 };
 
 use crate::worldgen::{
     chunks::{CHUNK_HEIGHT, CHUNK_SIZE, Chunk, ChunkEntities, ChunkManager, ChunkPos, PendingChunks}, models::{BlockModelsManager, CullingMode, Faces, SharedBlockModelsManager}, registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager}, textures::BlockAtlas,
 };
+
+const RENDERING_SIZE: i32 = 6;
+
 pub struct ChunkMeshAttributes {
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<[f32; 3]>,
@@ -76,7 +75,7 @@ pub fn render_pending_chunks(
     let task: Task<ChunkMeshAttributes> = task_pool.spawn(async move {        
         let chunk = cloned_chunk_manager.get(&chunk_pos).unwrap();
 
-        render_chunk(
+        render_chunk_mesh(
             chunk,
             chunk_pos,
             atlas_size,
@@ -89,7 +88,58 @@ pub fn render_pending_chunks(
     pending_chunk_mesh.insert(chunk_pos, task);
 }
 
-pub fn render_chunk(
+pub fn render_chunks_in_range(
+    mut pending_chunks: ResMut<PendingChunks>,
+    manager: Res<ChunkManager>,
+    chunk_entities: ResMut<ChunkEntities>,
+    camera: Single<&Transform, With<Camera3d>>,
+) {
+    let current_chunk_pos = manager.get_chunk_pos(camera.translation.as_ivec3());
+
+    for chunk_x in -RENDERING_SIZE..=RENDERING_SIZE {
+        for chunk_z in -RENDERING_SIZE..=RENDERING_SIZE {
+            let pos = ChunkPos::new(chunk_x + current_chunk_pos.x, chunk_z + current_chunk_pos.z);
+
+            if chunk_entities.chunks.contains_key(&pos)
+                || pending_chunks.in_queue(pos)
+                || !manager.exists(&pos)
+            {
+                continue;
+            }
+
+            pending_chunks.back_enqueue(pos);
+        }
+    }
+}
+
+pub fn remove_out_of_range_chunks(
+    mut commands: Commands,
+    mut chunk_entities: ResMut<ChunkEntities>,
+    entities: &Entities,
+    pending_chunks: Res<PendingChunks>,
+    manager: ResMut<ChunkManager>,
+    camera: Single<&Transform, With<Camera3d>>,
+) {
+    let current_chunk_pos = manager.get_chunk_pos(camera.translation.as_ivec3());
+
+    let out_of_range: Vec<ChunkPos> = manager
+        .iter_out_of_range(current_chunk_pos, RENDERING_SIZE + 4)
+        .map(|(pos, _)| *pos)
+        .collect();
+
+    for chunk_pos in out_of_range {
+        if pending_chunks.in_queue(chunk_pos) || !chunk_entities.chunks.contains_key(&chunk_pos) {
+            continue;
+        }
+
+        if let Some(entity) = chunk_entities.chunks.get(&chunk_pos) && entities.contains_spawned(*entity) {
+            commands.entity(*entity).despawn();
+            chunk_entities.chunks.remove(&chunk_pos);
+        }
+    }
+}
+
+pub fn render_chunk_mesh(
     chunk: &Chunk,
     chunk_pos: ChunkPos,
     atlas_size: UVec2,

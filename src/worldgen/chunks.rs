@@ -1,12 +1,12 @@
 use std::collections::VecDeque;
 
 use bevy::{platform::collections::HashMap, prelude::*};
-use noise::{NoiseFn, Perlin};
+use noise::{Fbm, NoiseFn, Perlin};
 
 use crate::worldgen::{models::Faces, registry::AIR_BLOCK, rendering::FACE_NEIGHBORS};
 
 pub const CHUNK_SIZE: usize = 16;
-pub const CHUNK_HEIGHT: usize = 64;
+pub const CHUNK_HEIGHT: usize = 128;
 const CHUNK_VOLUME: usize = CHUNK_SIZE * CHUNK_HEIGHT * CHUNK_SIZE;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -36,7 +36,9 @@ impl ChunkPos {
 #[derive(Resource, Debug)]
 pub struct ChunkInfo {
     pub seed: u32,
-    pub perlin: Perlin,
+    pub base_perlin: Fbm<Perlin>,
+    pub mountain_perlin: Fbm<Perlin>,
+    pub forest_perlin: Fbm<Perlin>,
 }
 
 #[derive(Resource, Clone, Debug, Default)]
@@ -440,9 +442,9 @@ impl Chunk {
 
     pub fn set(&mut self, position: UVec3, block: u8) {
         let index = Chunk::index(
-            position.x as usize,
-            position.y as usize,
-            position.z as usize,
+            (position.x as usize).clamp(0, CHUNK_SIZE),
+            (position.y as usize).clamp(0, CHUNK_HEIGHT),
+            (position.z as usize).clamp(0, CHUNK_SIZE),
         );
         self.blocks[index] = block;
     }
@@ -467,22 +469,28 @@ impl Chunk {
         self.blocks.get(Chunk::index(x, y, z)).cloned()
     }
 
-    pub fn perlin_generation(&mut self, perlin: &noise::Perlin, pos: ChunkPos) {
+    pub fn perlin_generation(
+        &mut self, 
+        base_perlin: &Fbm<Perlin>,
+        mountain_perlin: &Fbm<Perlin>,
+        forest_perlin: &Fbm<Perlin>,
+        pos: ChunkPos
+    ) {
         for x in 0..CHUNK_SIZE {
             for z in 0..CHUNK_SIZE {
                 let world_x = pos.x * CHUNK_SIZE as i32 + x as i32;
                 let world_z = pos.z * CHUNK_SIZE as i32 + z as i32;
 
-                let low = perlin.get([world_x as f64 * 0.01, world_z as f64 * 0.01]);
-                let high = perlin.get([world_x as f64 * 0.04, world_z as f64 * 0.04]);
+                let base = base_perlin.get([world_x as f64, world_z as f64]);
+                let peak = mountain_perlin.get([world_x as f64, world_z as f64]);
 
-                let noise = low * 0.8 + high * 0.2;
-                let height = (24.0 + noise * 12.0)
+                let height = (35.0 + (base * 10.0) + (peak * 24.0))
                     .floor()
                     .clamp(0.0, CHUNK_HEIGHT as f64);
 
                 for y in 0..height as usize {
                     let percentage = y as f64 / (height - 1.0);
+                    
                     if percentage >= 1.0 {
                         self.set(UVec3::new(x as u32, y as u32, z as u32), 1);
                     } else if percentage >= 0.7 {
@@ -495,8 +503,8 @@ impl Chunk {
         }
     }
 
-    pub fn with_perlin_generation(mut self, perlin: &noise::Perlin, pos: ChunkPos) -> Self {
-        self.perlin_generation(perlin, pos);
-        self
-    }
+    // pub fn with_perlin_generation(mut self, perlin: &Fbm<Perlin>, pos: ChunkPos) -> Self {
+    //     self.perlin_generation(perlin, pos);
+    //     self
+    // }
 }

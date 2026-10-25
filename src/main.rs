@@ -4,18 +4,16 @@ use bevy::{
     prelude::*,
     window::{CursorGrabMode, CursorOptions},
 };
-use noise::Perlin;
+use noise::{Fbm, MultiFractal, Perlin};
 
 use crate::worldgen::{
-    chunks::{ChunkEntities, ChunkInfo, ChunkManager, PendingChunks},
-    generation::{begin_rendering_chunks, generate_chunks, remove_out_of_range_chunks},
-    models::{
+    chunks::{ChunkEntities, ChunkInfo, ChunkManager, PendingChunks}, generation::{LoadedStructure, generate_chunks, generate_structures}, models::{
         BlockModel, BlockModelsLoader, BlockModelsManager, PendingBlockModels,
         collect_loaded_models,
-    },
-    registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks},
-    rendering::{PendingChunksMesh, render_pending_chunks, render_pending_chunks_mesh},
-    textures::{BlockAtlas, prepare_block_atlas},
+    }, registry::{AIR_BLOCK, RegistryManager, SharedRegistryManager, register_blocks}, rendering::{
+        PendingChunksMesh, remove_out_of_range_chunks, render_chunks_in_range,
+        render_pending_chunks, render_pending_chunks_mesh,
+    }, textures::{BlockAtlas, prepare_block_atlas},
 };
 
 pub mod worldgen;
@@ -40,6 +38,7 @@ fn main() {
         .add_plugins(DefaultPlugins)
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .init_resource::<ChunkManager>()
+        .init_resource::<LoadedStructure>()
         .init_resource::<PendingChunks>()
         .init_resource::<PendingChunksMesh>()
         .init_resource::<ChunkEntities>()
@@ -52,7 +51,7 @@ fn main() {
         .add_systems(Update, update_fps_counter)
         .add_systems(OnEnter(GameState::LoadingAsset), load_asset)
         .add_systems(
-            FixedUpdate,
+            Update,
             check_asset_loaded.run_if(in_state(GameState::LoadingAsset)),
         )
         .add_systems(
@@ -69,17 +68,19 @@ fn main() {
             Update,
             (
                 generate_chunks,
-                begin_rendering_chunks,
-                remove_out_of_range_chunks,
-                render_pending_chunks,
-                render_pending_chunks_mesh,
-                grab_mouse,
-                camera_movement_key,
-                block_switch,
-                block_breaking,
-                block_placing,
-            )
-                .run_if(in_state(GameState::Playing)),
+                generate_structures.after(generate_chunks),
+                render_chunks_in_range.after(generate_structures),
+                remove_out_of_range_chunks.after(render_chunks_in_range),
+                render_pending_chunks.after(remove_out_of_range_chunks),
+                render_pending_chunks_mesh.after(render_pending_chunks),
+                (
+                    grab_mouse,
+                    camera_movement_key,
+                    block_switch,
+                    block_breaking,
+                    block_placing,
+                ),
+            ).run_if(in_state(GameState::Playing)),
         )
         .run();
 }
@@ -138,9 +139,29 @@ fn init_before_playing(mut commands: Commands, mut next_state: ResMut<NextState<
     commands.insert_resource(BlockHighlight { block_id: 1 });
 
     let seed = rand::random_range(1..1000000);
+    let base_perlin = Fbm::<Perlin>::new(seed)
+        .set_octaves(5)
+        .set_frequency(1.0 / 90.0)
+        .set_lacunarity(2.0)
+        .set_persistence(0.5);
+
+    let mountain_perlin = Fbm::<Perlin>::new(seed + 1)
+        .set_octaves(5)
+        .set_frequency(1.0 / 200.0)
+        .set_lacunarity(3.5)
+        .set_persistence(0.05);
+
+    let forest_perlin = Fbm::<Perlin>::new(seed + 2)
+        .set_octaves(3)
+        .set_frequency(1.0 / 12.5)
+        .set_lacunarity(2.0)
+        .set_persistence(0.5);
+
     commands.insert_resource(ChunkInfo {
         seed: seed,
-        perlin: Perlin::new(seed),
+        base_perlin: base_perlin,
+        mountain_perlin: mountain_perlin,
+        forest_perlin: forest_perlin,
     });
 
     next_state.set(GameState::Playing);
@@ -271,7 +292,7 @@ fn camera_movement_key(
     camera: Single<&mut Transform, With<Camera3d>>,
 ) {
     let mut transform = camera.into_inner();
-    let speed = 15.0;
+    let speed = 32.0;
     let sensitivity = 0.002;
 
     if keyboard.pressed(KeyCode::KeyW) {
@@ -294,13 +315,13 @@ fn camera_movement_key(
         transform.translation += dir * speed * time.delta_secs()
     }
 
-    if keyboard.pressed(KeyCode::KeyE) {
-        let dir = *transform.up();
+    if keyboard.pressed(KeyCode::Space) {
+        let dir = Vec3::new(0.0, 1.0, 0.0);
         transform.translation += dir * speed * time.delta_secs();
     }
 
-    if keyboard.pressed(KeyCode::KeyQ) {
-        let dir = *transform.down();
+    if keyboard.pressed(KeyCode::ShiftLeft) {
+        let dir = Vec3::new(0.0, -1.0, 0.0);
         transform.translation += dir * speed * time.delta_secs();
     }
 
@@ -374,7 +395,7 @@ fn block_breaking(
         chunk_manager.set_block_by_world_pos(position_hit, AIR_BLOCK);
 
         chunk_manager.update_chunk_by_world_pos(position_hit, &mut pending_chunks);
-        
+
         chunk_manager.update_neighbor_chunks_by_world_pos(position_hit, &mut pending_chunks);
     }
 }
@@ -409,6 +430,8 @@ fn block_placing(
         }
 
         chunk_manager.set_block_by_world_pos(world_pos, block_highlight.block_id);
+
+        println!("world_position: {0}: {1} - {2} - {3}", block, world_pos.x, world_pos.y, world_pos.z);
 
         chunk_manager.update_neighbor_chunks_by_world_pos(world_pos, &mut pending_chunks);
 
