@@ -37,14 +37,17 @@ impl Structure {
 
     pub fn new_tree(position: IVec3) -> Self {
         let width = 8;
-        let height = 8;
+        let height = 10;
         let mut tree = Self::new(position, width, height, true);
+
+        // Leaves
+        tree.fill(UVec3::new(2, 7, 2), UVec3::new(4, 8, 4), 7);
+
+        // Leaves
+        tree.fill(UVec3::new(1, 5, 1), UVec3::new(5, 6, 5), 7);
 
         // Trunk
         tree.fill(UVec3::new(3, 0, 3), UVec3::new(3, 4, 3), 6);
-
-        // Leaves
-        tree.fill(UVec3::new(1, 5, 1), UVec3::new(5, 5, 5), 7);
 
         tree
     }
@@ -100,7 +103,15 @@ impl Structure {
     }
 
     pub fn get_world_position(&self, index: usize) -> IVec3 {
-        self.position + self.get_position(index).as_ivec3()
+        let local_position = self.get_position(index).as_ivec3();
+
+        let center_offset = IVec3::new(
+            (self.width / 2) as i32,
+            0,
+            (self.width / 2) as i32,
+        );
+
+        self.position + local_position - center_offset
     }
 
     pub fn place(&self, chunk_manager: &mut ChunkManager) {
@@ -150,6 +161,8 @@ pub fn generate_structures(
     chunk_info: Res<ChunkInfo>,
     camera: Single<&Transform, With<Camera3d>>,
 ) {
+    let tree_distance = 10;
+
     let current_chunk_pos = manager.get_chunk_pos(camera.translation.as_ivec3());
 
     let base_perlin = &chunk_info.base_perlin;
@@ -158,6 +171,7 @@ pub fn generate_structures(
 
     for chunk_x in -SIMULATION_SIZE..=SIMULATION_SIZE {
         for chunk_z in -SIMULATION_SIZE..=SIMULATION_SIZE {
+            let mut existing_trees: Vec<IVec3> = Vec::new();
             let pos = ChunkPos::new(chunk_x + current_chunk_pos.x, chunk_z + current_chunk_pos.z);
 
             if !manager.exists(&pos) || loaded_structure.chunks.contains(&pos) {
@@ -169,20 +183,35 @@ pub fn generate_structures(
                     let world_x = pos.x * CHUNK_SIZE as i32 + x as i32;
                     let world_z = pos.z * CHUNK_SIZE as i32 + z as i32;
 
-                    let base = base_perlin.get([world_x as f64, world_z as f64]);
-                    let peak = mountain_perlin.get([world_x as f64, world_z as f64]);
-                    let tree_freq = forest_perlin.get([world_x as f64, world_z as f64]);
+                    let pos_x = world_x;
+                    let pos_z = world_z;
 
-                    let cell_x = world_x.div_euclid(8);
-                    let cell_z = world_z.div_euclid(8);
+                    let base = base_perlin.get([pos_x as f64, pos_z as f64]);
+                    let peak = mountain_perlin.get([pos_x as f64, pos_z as f64]);
+                    let tree_freq = forest_perlin.get([pos_x as f64, pos_z as f64]);
 
-                    if tree_freq > 0.75 {
+                    if tree_freq > 0.54 {
+                        let too_close = existing_trees.iter().any(|other_pos| {
+                            let dx = other_pos.x - pos_x;
+                            let dz = other_pos.z - pos_z;
+
+                            dx * dx + dz * dz < tree_distance * tree_distance
+                        });
+
+                        if too_close && !existing_trees.is_empty() {
+                            continue;
+                        }
+                        
                         let height = (35.0 + (base * 10.0) + (peak * 24.0))
                             .floor()
                             .clamp(0.0, CHUNK_HEIGHT as f64);
 
-                        let tree = Structure::new_tree(IVec3::new(cell_x, height as i32 - 1, cell_z));
-                        tree.place(&mut (*manager));
+                        let pos = IVec3::new(pos_x, height as i32, pos_z);
+
+                        let tree = Structure::new_tree(pos);
+                        tree.place(&mut manager);
+
+                        existing_trees.push(pos);
                     }
                 }
             }
